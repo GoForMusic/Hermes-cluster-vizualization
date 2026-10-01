@@ -1,0 +1,3 @@
+# Requests a review automatically when a PR touches a matching path. Last matching pattern wins (like .gitignore), so
+# keep this one default rule, and add more specific ones below it as the project gets more than one maintainer.
+* @GoForMusic
