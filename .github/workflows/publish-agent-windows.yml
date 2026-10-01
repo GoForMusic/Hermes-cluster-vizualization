@@ -66,6 +66,10 @@ jobs:
           $image = "ghcr.io/${{ github.repository_owner }}/hermes-agent-windows".ToLower()
           Add-Content -Path $env:GITHUB_ENV -Value "IMAGE=$image"
 
+      # the Docker service exists on this image but isn't always started yet when the job gets to it
+      - name: 🐳 Start the Docker service
+        run: Start-Service -Name docker
+
       - name: 🔑 Log in to GHCR
         uses: docker/login-action@v4
         with:

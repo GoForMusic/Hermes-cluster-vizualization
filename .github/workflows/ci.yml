@@ -212,6 +212,10 @@ jobs:
       - name: 📦 Stage the binary for the Docker build
         run: Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe
 
+      # the Docker service exists on this image but isn't always started yet when the job gets to it
+      - name: 🐳 Start the Docker service
+        run: Start-Service -Name docker
+
       - name: 🐳 Build the Windows agent image
         run: docker build -f agent-windows/Dockerfile -t hermes-agent-windows:ci .
 
