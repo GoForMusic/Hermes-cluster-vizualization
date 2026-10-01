@@ -154,7 +154,7 @@ The project was rewritten from Go to Rust (hub, agents and the gRPC contract). W
 
 **Not ported yet** (they were in the Go version, which is in the git history): sources the hub reads itself with a kubeconfig, the development demo fixture.
 Not yet at all: Nomad, several users and roles, real traffic between workloads.
-See [TODO.md](TODO.md).
+See [open issues](https://github.com/GoForMusic/Hermes-cluster-vizualization/issues).
 
 ## License
 
