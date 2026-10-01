@@ -1,0 +1,13 @@
+# Same job as setup-protoc, for a Windows runner (different release asset, no sudo/unzip, PATH via $GITHUB_PATH).
+name: setup-protoc-windows
+description: Install a recent protoc into PATH, on a Windows runner
+runs:
+  using: composite
+  steps:
+    - name: 🧬 Download protoc and add it to PATH
+      shell: pwsh
+      run: |
+        $version = "29.3"
+        Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v$version/protoc-$version-win64.zip" -OutFile "$env:RUNNER_TEMP\protoc.zip"
+        Expand-Archive "$env:RUNNER_TEMP\protoc.zip" -DestinationPath "$env:RUNNER_TEMP\protoc"
+        Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\protoc\bin"

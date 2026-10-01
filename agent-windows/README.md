@@ -25,21 +25,23 @@ Published by the pipeline when you push a tag `agent-windows-X.Y.Z`: two images,
 `X.Y.Z-ltsc2019` (Windows Server 2019). Windows containers need a host with the same kernel version (unless Hyper-V isolation is used), so pick the tag that
 matches your nodes for `AGENT_IMAGE_WINDOWS`.
 
-The binary is cross-compiled in a Linux stage (`x86_64-pc-windows-gnu`, mingw) and the Windows stage only copies it, so it is built **from Linux**, no Windows host
-needed. By hand, from the **repository root**:
+Built **natively on Windows** (CI uses a `windows-latest` runner): the binary is compiled first (default host target, no mingw/cross-compile), then the
+Dockerfile just copies it in, on a host with Docker in Windows-container mode. By hand, from the **repository root**:
 
-```bash
-docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 \
-  --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:ltsc2022 --build-arg VERSION=1.0.0 \
-  -t REGISTRY/hermes-agent-windows:1.0.0-ltsc2022 --push .
+```powershell
+cargo build --release --locked -p hermes-agent-windows
+docker build -f agent-windows/Dockerfile `
+  --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:ltsc2022 --build-arg VERSION=1.0.0 `
+  -t REGISTRY/hermes-agent-windows:1.0.0-ltsc2022 .
+docker push REGISTRY/hermes-agent-windows:1.0.0-ltsc2022
 ```
 
 ## Status
 
-Compiles and lints for Windows, the image builds and its structure was checked (windows/amd64, `ContainerAdministrator`, `C:\agent.exe`, a 3 MB binary), the
-platform-neutral part (the collector, the Docker stats arithmetic for Windows containers) is tested against a fake Docker engine. It has **never been run on a real
-Windows node**, and the binary depends only on system DLLs (`kernel32`, `ntdll`, `advapi32`, `ws2_32`, `bcrypt`, `msvcrt`): whether `msvcrt.dll` is in every Nano Server image is
-an assumption to check on the first real run.
+Compiles, lints and runs its tests on a real Windows machine in CI (the two `kernel32` calls included — a GitHub-hosted `windows-latest` runner, not a Swarm
+node), and the image builds and its structure was checked (windows/amd64, `ContainerAdministrator`, `C:\agent.exe`, a 3 MB binary). It has **never been run
+on a real Windows Swarm node**, and the binary depends only on system DLLs (`kernel32`, `ntdll`, `advapi32`, `ws2_32`, `bcrypt`, `msvcrt`): whether `msvcrt.dll`
+is in every Nano Server image is an assumption to check on the first real run.
 
 ## Layout
 

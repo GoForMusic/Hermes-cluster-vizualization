@@ -125,7 +125,7 @@ Runs on GitHub-hosted runners (`ubuntu-latest`, free for a public repo). Images 
 | `ci.yml` | every pull request (a new commit cancels the run still going for the previous one) | `cargo fmt --check`, `clippy -D warnings`, tests with code coverage (`cargo llvm-cov nextest`; `vitest --coverage` for the web app) and an image build, with the test report and the coverage as a comment on the pull request (one comment per job, updated on every push), **only for what changed**: a change in `hermes-server/` runs the hub job, in `agent-linux/` the agent job; in `agent-windows/` the Windows agent job; a change in `pkg/`, `proto/` or `Cargo.*` runs them all. The job `ci-ok` is the one required check: set it in the branch protection of `main` |
 | `publish-server.yml` | tag `server-X.Y.Z` | test, build, push `hermes-server:X.Y.Z` (linux/amd64) |
 | `publish-agent-linux.yml` | tag `agent-linux-X.Y.Z` | test, build, push `hermes-agent-linux:X.Y.Z` (linux/amd64) |
-| `publish-agent-windows.yml` | tag `agent-windows-X.Y.Z` | test, build (from Linux), push `hermes-agent-windows:X.Y.Z-ltsc2022` and `-ltsc2019` |
+| `publish-agent-windows.yml` | tag `agent-windows-X.Y.Z` | test, build natively on a Windows runner, push `hermes-agent-windows:X.Y.Z-ltsc2022` and `-ltsc2019` |
 
 ```bash
 git tag agent-linux-1.0.1 && git push origin agent-linux-1.0.1     # publishes only the Linux agent, on every remote that has the tag

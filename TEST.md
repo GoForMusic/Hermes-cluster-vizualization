@@ -37,15 +37,23 @@ Imaginile apar în registry, la Packages: `registry.exemplu.ro/tu/hermes-agent-l
 `registry.exemplu.ro/tu/hermes-agent-windows:1.0.0-ltsc2022` (și `-ltsc2019`). `ltsc2022` = Windows Server 2022, `ltsc2019` = Windows Server 2019:
 alegi eticheta care corespunde nodurilor tale. (Pe GitHub, pipeline-ul `publish-*.yml` publică automat pe `ghcr.io/tu/...`, fără secrete de configurat.)
 
-Manual, fără pipeline (de pe orice mașină cu Docker, din rădăcina repo-ului clonat; nu mai e nevoie de credențiale pentru cod, totul e în repo):
+Manual, fără pipeline (nu mai e nevoie de credențiale pentru cod, totul e în repo):
 
 ```bash
+# agentul Linux, de pe orice mașină cu Docker, din rădăcina repo-ului clonat:
 docker login registry.exemplu.ro        # utilizator + token cu write:package
 docker buildx build -f agent-linux/Dockerfile --platform linux/amd64 \
   -t registry.exemplu.ro/tu/hermes-agent-linux:1.0.0 --push .
-docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 \
-  --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:ltsc2022 --build-arg VERSION=1.0.0 \
-  -t registry.exemplu.ro/tu/hermes-agent-windows:1.0.0-ltsc2022 --push .    # se construiește din Linux
+```
+
+```powershell
+# agentul Windows: nativ, de pe o mașină Windows cu Docker (Windows containers mode) și Rust instalate — nu se mai cross-compilează de pe Linux:
+cargo build --release --locked -p hermes-agent-windows
+docker login registry.exemplu.ro
+docker build -f agent-windows/Dockerfile `
+  --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:ltsc2022 --build-arg VERSION=1.0.0 `
+  -t registry.exemplu.ro/tu/hermes-agent-windows:1.0.0-ltsc2022 .
+docker push registry.exemplu.ro/tu/hermes-agent-windows:1.0.0-ltsc2022
 ```
 
 Dacă mașina care construiește nu rezolvă numele registry-ului (numele e doar în `/etc/hosts`), adaugă `--add-host registry.exemplu.ro:IP-UL-REGISTRY`.
