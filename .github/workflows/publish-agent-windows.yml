@@ -4,6 +4,9 @@
 #   hermes-agent-windows:1.0.1-ltsc2022   (Windows Server 2022)
 #   hermes-agent-windows:1.0.1-ltsc2019   (Windows Server 2019)
 # No secrets to configure: GHCR auth uses the job's own GITHUB_TOKEN.
+# Runs on a Windows runner, natively: the binary is compiled once (no mingw), then docker build (no buildx/cross-platform
+# trick — GitHub's windows-latest runners build Windows container images directly) packages it for each base image.
+# PowerShell throughout (the default shell here), not bash — this is a native Windows job.
 name: publish-agent-windows
 
 on:
@@ -16,46 +19,82 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🔖 Read the version from the tag
         id: v
         run: |
-          version="${GITHUB_REF_NAME#agent-windows-}"
-          echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "the tag must look like agent-windows-1.2.3"; exit 1; }
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: 🪟 Install the MinGW cross compiler
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+          $version = $env:GITHUB_REF_NAME -replace '^agent-windows-', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "the tag must look like agent-windows-1.2.3"
+            exit 1
+          }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
       - name: 🧬 Install protoc
-        uses: ./.github/actions/setup-protoc
+        uses: ./.github/actions/setup-protoc-windows
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: clippy, targets: x86_64-pc-windows-gnu }
+        with:
+          components: clippy
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🧪 Test the agent
         run: cargo test --locked -p hermes-swarm -p hermes-agent-windows
-      - name: 🧹 Lint for Windows (clippy)
-        run: cargo clippy --locked -p hermes-agent-windows --target x86_64-pc-windows-gnu -- -D warnings
-        env: { CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc, CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc }
-      - name: 🔧 Set up buildx
-        uses: docker/setup-buildx-action@v4
+
+      - name: 🧹 Lint (clippy)
+        run: cargo clippy --locked -p hermes-swarm -p hermes-agent-windows -- -D warnings
+
+      - name: 🏗️ Build the release binary
+        env:
+          HERMES_VERSION: "${{ steps.v.outputs.version }}"
+        run: cargo build --release --locked -p hermes-agent-windows
+
+      # target/ is in .dockerignore (the other Dockerfiles compile inside Docker and never need it sent) — stage the
+      # one file the image needs outside it, so it's actually in the build context.
+      - name: 📦 Stage the binary for the Docker build
+        run: Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe
+
       - name: 🏷️ Image name (GHCR wants it lowercase)
-        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}/hermes-agent-windows' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+        run: |
+          $image = "ghcr.io/${{ github.repository_owner }}/hermes-agent-windows".ToLower()
+          Add-Content -Path $env:GITHUB_ENV -Value "IMAGE=$image"
+
+      # the Docker service exists on this image but isn't always started yet when the job gets to it
+      - name: 🐳 Start the Docker service
+        run: Start-Service -Name docker
+
       - name: 🔑 Log in to GHCR
         uses: docker/login-action@v4
-        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+        with:
+          registry: ghcr.io
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+
       - name: 🚀 Build and push the agent images (Windows Server 2022 and 2019)
         run: |
-          for ltsc in ltsc2022 ltsc2019; do
-            docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 \
-              --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:$ltsc --build-arg VERSION=${{ steps.v.outputs.version }} \
-              -t "$IMAGE:${{ steps.v.outputs.version }}-$ltsc" --push .
-          done
+          $version = "${{ steps.v.outputs.version }}"
+          foreach ($ltsc in @("ltsc2022", "ltsc2019")) {
+            $tag = "${env:IMAGE}:$version-$ltsc"
+            docker build -f agent-windows/Dockerfile `
+              --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:$ltsc --build-arg VERSION=$version `
+              -t $tag .
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            docker push $tag
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
       # a package pushed from this repo's own workflow is linked to it automatically; no extra step needed.
       - name: 🏷️ Create the release
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env:
+          GH_TOKEN: "${{ github.token }}"
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Images: \`$IMAGE:${{ steps.v.outputs.version }}-ltsc2022\` and \`-ltsc2019\`"
+          $version = "${{ steps.v.outputs.version }}"
+          $notes = "Images: ``${env:IMAGE}:$version-ltsc2022`` and ``-ltsc2019``"
+          gh release create "$env:GITHUB_REF_NAME" --title "$env:GITHUB_REF_NAME" --notes $notes

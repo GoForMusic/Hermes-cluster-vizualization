@@ -96,3 +96,23 @@ mod tests {
         );
     }
 }
+
+// Only runs where it means something: a real Windows host with real kernel32 calls behind it, not the Linux cross-compile CI
+// does for the image build (which never executes the result).
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn on_windows_it_reads_plausible_numbers() {
+        let mut sampler = WindowsSampler::default();
+        sampler.sample().unwrap(); // first call: nothing to compare the CPU times with yet
+        let sample = sampler.sample().unwrap();
+        assert!(sample.mem_total_mib > 0.0, "{sample:?}");
+        assert!(sample.mem_used_mib <= sample.mem_total_mib, "{sample:?}");
+        let cpu = sample
+            .cpu
+            .expect("a second sample has something to compare with");
+        assert!((0.0..=100.0).contains(&cpu), "{sample:?}");
+    }
+}

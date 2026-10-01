@@ -35,6 +35,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: 🔎 Work out what changed
         id: diff
         run: |
@@ -58,28 +59,40 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
+        with:
+          components: "rustfmt, clippy"
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🧰 Install coverage tools
         uses: ./.github/actions/setup-rust-coverage
+
       - name: 🎨 Check formatting
         run: cargo fmt --check
+
       - name: 🧹 Lint (clippy)
         run: cargo clippy --locked -p hermes-hub --all-targets -- -D warnings
+
       - name: 🧪 Test with coverage
         run: cargo llvm-cov nextest --locked --profile ci -p hermes-hub --ignore-filename-regex '/(tests|examples)/' --json --summary-only --output-path target/coverage.json
+
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
         run: python3 .github/scripts/pr_report.py --key hub --title "🦀 Hub (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+
       # the tests write the TypeScript types of the web app: they must be what is committed
       - name: 📝 Check the generated TypeScript types are committed
         run: git diff --exit-code -- hermes-server/web/src/generated
+
       - name: 🐳 Build the hub image
         run: docker build -f hermes-server/Dockerfile -t hermes-server:ci .
 
@@ -93,20 +106,30 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🟢 Install Node
         uses: actions/setup-node@v7
-        with: { node-version: 22, cache: npm, cache-dependency-path: hermes-server/web/package-lock.json }
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hermes-server/web/package-lock.json
+
       - name: 📦 Install dependencies
         run: npm ci
+
       - name: 🔬 Type-check
         run: npm run typecheck
+
       - name: 🧪 Test with coverage
         run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=junit.xml
+
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
         working-directory: .
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
         run: python3 .github/scripts/pr_report.py --key web --title "🌐 Web (TypeScript)" --junit hermes-server/web/junit.xml --coverage hermes-server/web/coverage/coverage-summary.json --coverage-format vitest
+
       - name: 🔨 Build
         run: npm run build
 
@@ -117,66 +140,84 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
+        with:
+          components: "rustfmt, clippy"
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🧰 Install coverage tools
         uses: ./.github/actions/setup-rust-coverage
+
       - name: 🎨 Check formatting
         run: cargo fmt --check
+
       - name: 🧹 Lint (clippy)
         run: cargo clippy --locked -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux --all-targets -- -D warnings
+
       - name: 🧪 Test with coverage
         run: cargo llvm-cov nextest --locked --profile ci -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux --ignore-filename-regex '/(tests|examples)/' --json --summary-only --output-path target/coverage.json
+
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
         run: python3 .github/scripts/pr_report.py --key agent-linux --title "🐧 Linux agent (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+
       - name: 🐳 Build the agent image
         run: docker build -f agent-linux/Dockerfile -t hermes-agent-linux:ci .
 
+  # Natively on Windows, no cross-compile: compiles, lints, tests (the real kernel32 calls, not just cross-compiled and never
+  # run), and builds the Windows image, all on the same windows-latest runner. docker on GitHub's Windows runners builds
+  # Windows container images directly, no buildx/cross-platform trick needed (that trick is gone, along with mingw).
   agent-windows:
     needs: changes
     if: needs.changes.outputs.agent_windows == 'true'
-    runs-on: ubuntu-latest
-    env:
-      CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
-      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+    runs-on: windows-latest
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
-      - name: 🪟 Install the MinGW cross compiler
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+
       - name: 🧬 Install protoc
-        uses: ./.github/actions/setup-protoc
+        uses: ./.github/actions/setup-protoc-windows
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy", targets: x86_64-pc-windows-gnu }
+        with:
+          components: "rustfmt, clippy"
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
-      - name: 🧰 Install test runner
-        uses: ./.github/actions/setup-rust-coverage
+
       - name: 🎨 Check formatting
         run: cargo fmt --check
-      # what can run here runs; the Windows specific code is compiled and linted for Windows, and the image build compiles it again
-      # (no coverage here: it would only measure what compiles on Linux, which says little about an agent for Windows)
+
+      - name: 🧹 Lint (clippy)
+        run: cargo clippy --locked -p hermes-swarm -p hermes-agent-windows --all-targets -- -D warnings
+
       - name: 🧪 Test
-        run: cargo nextest run --locked --profile ci -p hermes-swarm -p hermes-agent-windows
-      - name: 💬 Comment the test report on the pull request
-        if: always()
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: python3 .github/scripts/pr_report.py --key agent-windows --title "🪟 Windows agent (Rust)" --junit target/nextest/ci/junit.xml
-      - name: 🧹 Lint for Windows (clippy)
-        run: cargo clippy --locked -p hermes-agent-windows --target x86_64-pc-windows-gnu --all-targets -- -D warnings
-      # a Linux daemon can't load a Windows image into its store, so build without exporting (releases push straight to the registry)
-      - name: 🔧 Set up buildx
-        uses: docker/setup-buildx-action@v4
+        run: cargo test --locked -p hermes-swarm -p hermes-agent-windows
+
+      - name: 🏗️ Build the release binary
+        run: cargo build --release --locked -p hermes-agent-windows
+
+      # target/ is in .dockerignore (the other Dockerfiles compile inside Docker and never need it sent) — stage the
+      # one file the image needs outside it, so it's actually in the build context.
+      - name: 📦 Stage the binary for the Docker build
+        run: Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe
+
+      # the Docker service exists on this image but isn't always started yet when the job gets to it
+      - name: 🐳 Start the Docker service
+        run: Start-Service -Name docker
+
       - name: 🐳 Build the Windows agent image
-        run: docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 --output type=cacheonly .
+        run: docker build -f agent-windows/Dockerfile -t hermes-agent-windows:ci .
 
   # The single required check: green when every job that was needed passed or was skipped because nothing it depends on changed.
   ci-ok:

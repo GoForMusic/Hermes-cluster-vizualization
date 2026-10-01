@@ -16,6 +16,8 @@ kubeconfig
 /target/
 node_modules/
 dist/
+# the Windows agent binary, staged next to its Dockerfile for the Docker build context (target/ is dockerignored)
+agent-windows/agent.exe
 
 # test reports and coverage (CI makes them and comments them on the pull request)
 hermes-server/web/coverage/
