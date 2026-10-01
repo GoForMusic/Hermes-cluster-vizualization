@@ -23,6 +23,7 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🔖 Read the version from the tag
         id: v
         run: |
@@ -32,27 +33,41 @@ jobs:
             exit 1
           }
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc-windows
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: clippy }
+        with:
+          components: clippy
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🧪 Test the agent
         run: cargo test --locked -p hermes-swarm -p hermes-agent-windows
+
       - name: 🧹 Lint (clippy)
         run: cargo clippy --locked -p hermes-swarm -p hermes-agent-windows -- -D warnings
+
       - name: 🏗️ Build the release binary
-        env: { HERMES_VERSION: "${{ steps.v.outputs.version }}" }
+        env:
+          HERMES_VERSION: "${{ steps.v.outputs.version }}"
         run: cargo build --release --locked -p hermes-agent-windows
+
       - name: 🏷️ Image name (GHCR wants it lowercase)
         run: |
           $image = "ghcr.io/${{ github.repository_owner }}/hermes-agent-windows".ToLower()
           Add-Content -Path $env:GITHUB_ENV -Value "IMAGE=$image"
+
       - name: 🔑 Log in to GHCR
         uses: docker/login-action@v4
-        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+        with:
+          registry: ghcr.io
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+
       - name: 🚀 Build and push the agent images (Windows Server 2022 and 2019)
         run: |
           $version = "${{ steps.v.outputs.version }}"
@@ -65,9 +80,11 @@ jobs:
             docker push $tag
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+
       # a package pushed from this repo's own workflow is linked to it automatically; no extra step needed.
       - name: 🏷️ Create the release
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env:
+          GH_TOKEN: "${{ github.token }}"
         run: |
           $version = "${{ steps.v.outputs.version }}"
           $notes = "Images: ``${env:IMAGE}:$version-ltsc2022`` and ``-ltsc2019``"

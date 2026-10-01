@@ -35,6 +35,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: 🔎 Work out what changed
         id: diff
         run: |
@@ -58,28 +59,40 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
+        with:
+          components: "rustfmt, clippy"
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🧰 Install coverage tools
         uses: ./.github/actions/setup-rust-coverage
+
       - name: 🎨 Check formatting
         run: cargo fmt --check
+
       - name: 🧹 Lint (clippy)
         run: cargo clippy --locked -p hermes-hub --all-targets -- -D warnings
+
       - name: 🧪 Test with coverage
         run: cargo llvm-cov nextest --locked --profile ci -p hermes-hub --ignore-filename-regex '/(tests|examples)/' --json --summary-only --output-path target/coverage.json
+
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
         run: python3 .github/scripts/pr_report.py --key hub --title "🦀 Hub (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+
       # the tests write the TypeScript types of the web app: they must be what is committed
       - name: 📝 Check the generated TypeScript types are committed
         run: git diff --exit-code -- hermes-server/web/src/generated
+
       - name: 🐳 Build the hub image
         run: docker build -f hermes-server/Dockerfile -t hermes-server:ci .
 
@@ -93,20 +106,30 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🟢 Install Node
         uses: actions/setup-node@v7
-        with: { node-version: 22, cache: npm, cache-dependency-path: hermes-server/web/package-lock.json }
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hermes-server/web/package-lock.json
+
       - name: 📦 Install dependencies
         run: npm ci
+
       - name: 🔬 Type-check
         run: npm run typecheck
+
       - name: 🧪 Test with coverage
         run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=junit.xml
+
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
         working-directory: .
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
         run: python3 .github/scripts/pr_report.py --key web --title "🌐 Web (TypeScript)" --junit hermes-server/web/junit.xml --coverage hermes-server/web/coverage/coverage-summary.json --coverage-format vitest
+
       - name: 🔨 Build
         run: npm run build
 
@@ -117,25 +140,36 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
+        with:
+          components: "rustfmt, clippy"
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🧰 Install coverage tools
         uses: ./.github/actions/setup-rust-coverage
+
       - name: 🎨 Check formatting
         run: cargo fmt --check
+
       - name: 🧹 Lint (clippy)
         run: cargo clippy --locked -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux --all-targets -- -D warnings
+
       - name: 🧪 Test with coverage
         run: cargo llvm-cov nextest --locked --profile ci -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux --ignore-filename-regex '/(tests|examples)/' --json --summary-only --output-path target/coverage.json
+
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
         run: python3 .github/scripts/pr_report.py --key agent-linux --title "🐧 Linux agent (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+
       - name: 🐳 Build the agent image
         run: docker build -f agent-linux/Dockerfile -t hermes-agent-linux:ci .
 
@@ -149,21 +183,30 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc-windows
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
+        with:
+          components: "rustfmt, clippy"
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🎨 Check formatting
         run: cargo fmt --check
+
       - name: 🧹 Lint (clippy)
         run: cargo clippy --locked -p hermes-swarm -p hermes-agent-windows --all-targets -- -D warnings
+
       - name: 🧪 Test
         run: cargo test --locked -p hermes-swarm -p hermes-agent-windows
+
       - name: 🏗️ Build the release binary
         run: cargo build --release --locked -p hermes-agent-windows
+
       - name: 🐳 Build the Windows agent image
         run: docker build -f agent-windows/Dockerfile -t hermes-agent-windows:ci .
 

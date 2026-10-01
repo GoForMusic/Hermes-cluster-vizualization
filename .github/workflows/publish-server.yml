@@ -17,40 +17,57 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
+
       - name: 🔖 Read the version from the tag
         id: v
         run: |
           version="${GITHUB_REF_NAME#server-}"
           echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "the tag must look like server-1.2.3"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc
+
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: 🧪 Test the hub
         run: cargo test --locked -p hermes-hub
+
       - name: 🟢 Install Node
         uses: actions/setup-node@v7
-        with: { node-version: 22 }
+        with:
+          node-version: 22
+
       - name: 🧪 Test the web app
         run: npm ci && npm test
         working-directory: hermes-server/web
+
       - name: 🔧 Set up buildx
         uses: docker/setup-buildx-action@v4
+
       - name: 🏷️ Image name (GHCR wants it lowercase)
         run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}/hermes-server' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: 🔑 Log in to GHCR
         uses: docker/login-action@v4
-        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+        with:
+          registry: ghcr.io
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+
       - name: 🚀 Build and push the hub image (linux/amd64)
         run: |
           docker buildx build -f hermes-server/Dockerfile --platform linux/amd64 \
             --build-arg VERSION=${{ steps.v.outputs.version }} \
             -t "$IMAGE:${{ steps.v.outputs.version }}" --push .
+
       # a package pushed from this repo's own workflow is linked to it automatically; no extra step needed.
       - name: 🏷️ Create the release
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env:
+          GH_TOKEN: "${{ github.token }}"
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Image: \`$IMAGE:${{ steps.v.outputs.version }}\`"
