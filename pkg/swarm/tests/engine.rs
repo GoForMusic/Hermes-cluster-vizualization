@@ -1,4 +1,7 @@
 //! The collector as a whole, against a fake Docker engine on a unix socket: the real HTTP client, the real JSON, both kinds of node.
+//! Unix only: the fake engine listens on a real `UnixListener`, which doesn't exist on Windows (the production code's
+//! Windows named-pipe path is covered instead by `engine.rs`'s own `an_endpoint_the_platform_cannot_open_says_so_when_used`).
+#![cfg(unix)]
 
 use std::path::Path;
 use std::sync::Arc;

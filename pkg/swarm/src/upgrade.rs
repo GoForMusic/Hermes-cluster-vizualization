@@ -118,6 +118,8 @@ impl IUpgrader for SwarmUpgrader {
     }
 }
 
-#[cfg(test)]
+// The fake Docker engine here listens on a real unix socket (unlike engine.rs's tests, this one never exercises the
+// Windows named-pipe path) — Windows has no `tokio::net::UnixListener`, so this suite only builds on Unix.
+#[cfg(all(test, unix))]
 #[path = "../tests/unit/upgrade.rs"]
 mod tests;
