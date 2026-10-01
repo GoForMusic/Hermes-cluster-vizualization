@@ -36,4 +36,4 @@ Fill in the PR template — what changed and why, how you tested it. One pull re
 
 ## Code of conduct
 
-Be direct about the technical disagreement, respectful about the person. Reports of abusive behavior can go to the maintainer directly through a GitHub issue marked private, or the contact on the profile.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Be direct about the technical disagreement, respectful about the person.
