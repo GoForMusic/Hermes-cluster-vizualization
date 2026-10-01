@@ -158,20 +158,12 @@ jobs:
         with: { components: "rustfmt, clippy", targets: x86_64-pc-windows-gnu }
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
-      - name: 🧰 Install test runner
-        uses: ./.github/actions/setup-rust-coverage
       - name: 🎨 Check formatting
         run: cargo fmt --check
-      # what can run here runs; the Windows specific code is compiled and linted for Windows, and the image build compiles it again
-      # (no coverage here: it would only measure what compiles on Linux, which says little about an agent for Windows)
-      - name: 🧪 Test
-        run: cargo nextest run --locked --profile ci -p hermes-swarm -p hermes-agent-windows
-      - name: 💬 Comment the test report on the pull request
-        if: always()
-        env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: python3 .github/scripts/pr_report.py --key agent-windows --title "🪟 Windows agent (Rust)" --junit target/nextest/ci/junit.xml
+      # Running tests here would only run the non-Windows fallback path (this is Linux, cross-compiling, not executing)
+      # — agent-windows-native below runs the real thing on a real Windows runner. This job only compiles and lints for it.
       - name: 🧹 Lint for Windows (clippy)
-        run: cargo clippy --locked -p hermes-agent-windows --target x86_64-pc-windows-gnu --all-targets -- -D warnings
+        run: cargo clippy --locked -p hermes-swarm -p hermes-agent-windows --target x86_64-pc-windows-gnu --all-targets -- -D warnings
       # a Linux daemon can't load a Windows image into its store, so build without exporting (releases push straight to the registry)
       - name: 🔧 Set up buildx
         uses: docker/setup-buildx-action@v4
@@ -205,12 +197,12 @@ jobs:
   # The single required check: green when every job that was needed passed or was skipped because nothing it depends on changed.
   ci-ok:
     if: always()
-    needs: [changes, hub, web, agent-linux, agent-windows]
+    needs: [changes, hub, web, agent-linux, agent-windows, agent-windows-native]
     runs-on: ubuntu-latest
     steps:
       - name: 🚦 Fail if any job failed or was cancelled
         run: |
-          echo "changes=${{ needs.changes.result }} hub=${{ needs.hub.result }} web=${{ needs.web.result }} agent-linux=${{ needs.agent-linux.result }} agent-windows=${{ needs.agent-windows.result }}"
-          case "${{ needs.changes.result }} ${{ needs.hub.result }} ${{ needs.web.result }} ${{ needs.agent-linux.result }} ${{ needs.agent-windows.result }}" in
+          echo "changes=${{ needs.changes.result }} hub=${{ needs.hub.result }} web=${{ needs.web.result }} agent-linux=${{ needs.agent-linux.result }} agent-windows=${{ needs.agent-windows.result }} agent-windows-native=${{ needs.agent-windows-native.result }}"
+          case "${{ needs.changes.result }} ${{ needs.hub.result }} ${{ needs.web.result }} ${{ needs.agent-linux.result }} ${{ needs.agent-windows.result }} ${{ needs.agent-windows-native.result }}" in
             *failure*|*cancelled*) exit 1 ;;
           esac
