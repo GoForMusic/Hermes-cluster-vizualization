@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # The Cargo workspace (hub, both agents, pkg/proto, pkg/agentkit, pkg/swarm) — one manifest at the root covers every member.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # HERMES, the web app.
+  - package-ecosystem: npm
+    directory: /hermes-server/web
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # The workflows themselves (actions/checkout, docker/*, ...) — would have caught the Node 20 deprecation on its own.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
