@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -147,9 +148,10 @@ def post(markdown, key):
         print("not a pull request run, or no token: the report is only printed", file=sys.stderr)
         return
     # real GitHub serves its REST API from a different host than the site itself; a Gitea instance serves both from the same one.
-    base = "https://api.github.com" if server.rstrip("/") == "https://github.com" else f"{server.rstrip('/')}/api/v1"
+    is_real_github = urllib.parse.urlparse(server).hostname == "github.com"
+    base = "https://api.github.com" if is_real_github else f"{server.rstrip('/')}/api/v1"
     base = f"{base}/repos/{repo}"
-    page_size = "per_page" if "api.github.com" in base else "limit"
+    page_size = "per_page" if is_real_github else "limit"
     marker = f"<!-- ci-report:{key} -->"
     existing = None
     page = 1
