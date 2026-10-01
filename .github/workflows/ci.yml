@@ -32,7 +32,7 @@ jobs:
       agent_windows: ${{ steps.diff.outputs.agent_windows }}
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: 🔎 Work out what changed
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc
       - name: 🦀 Install the Rust toolchain
@@ -92,7 +92,7 @@ jobs:
         working-directory: hermes-server/web
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: 🟢 Install Node
         uses: actions/setup-node@v6
         with: { node-version: 22, cache: npm, cache-dependency-path: hermes-server/web/package-lock.json }
@@ -116,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: 🧬 Install protoc
         uses: ./.github/actions/setup-protoc
       - name: 🦀 Install the Rust toolchain
@@ -148,7 +148,7 @@ jobs:
       CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: 🪟 Install the MinGW cross compiler
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
       - name: 🧬 Install protoc
