@@ -1,0 +1,40 @@
+# Advanced setup, not Default setup: Default setup never runs on PRs opened by Dependabot (its analyses use a different
+# analysis key than workflow-based ones, so GitHub can't compare them — "N configurations not found" on every Dependabot PR).
+# An explicit workflow like this one does run on them, since their branches live in this repo, not a fork.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1' # weekly, catches anything a new CodeQL query release would now flag
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, python, rust]
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v5
+
+      - name: 🔍 Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: 🧮 Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
