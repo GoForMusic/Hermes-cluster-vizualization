@@ -31,9 +31,6 @@ jobs:
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: 📦 Cache cargo
-        uses: Swatinem/rust-cache@v2
-
       - name: 🧪 Test the agent
         run: cargo test --locked -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux
 
