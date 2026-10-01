@@ -32,7 +32,7 @@ jobs:
       - name: 🧪 Test the hub
         run: cargo test --locked -p hermes-hub
       - name: 🟢 Install Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with: { node-version: 22 }
       - name: 🧪 Test the web app
         run: npm ci && npm test
