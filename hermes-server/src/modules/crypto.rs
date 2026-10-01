@@ -41,11 +41,12 @@ pub fn encrypt(key: &Key, plaintext: &str) -> String {
         return String::new();
     }
     let nonce_bytes: [u8; NONCE_LEN] = rand::random();
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::try_from(nonce_bytes.as_slice())
+        .expect("rand::random() filled exactly NONCE_LEN bytes");
     // The key comes from `HUB_SECRET_KEY`: encryption only fails if that key is malformed, which `Key::from_hex` already rejects.
     let ciphertext = key
         .0
-        .encrypt(nonce, plaintext.as_bytes())
+        .encrypt(&nonce, plaintext.as_bytes())
         .expect("AES-GCM encryption with a valid key cannot fail");
     let mut out = Vec::with_capacity(NONCE_LEN + ciphertext.len());
     out.extend_from_slice(&nonce_bytes);
@@ -68,10 +69,12 @@ pub fn decrypt(key: &Key, stored: &str) -> Result<String> {
         bail!("secret is too short to hold a nonce");
     }
     let (nonce_bytes, ciphertext) = raw.split_at(NONCE_LEN);
-    let plaintext = key
-        .0
-        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
-        .map_err(|_| anyhow!("secret does not decrypt with this key (wrong HUB_SECRET_KEY, or it was tampered with)"))?;
+    let nonce = Nonce::try_from(nonce_bytes).expect("split_at(NONCE_LEN) guarantees this length");
+    let plaintext = key.0.decrypt(&nonce, ciphertext).map_err(|_| {
+        anyhow!(
+            "secret does not decrypt with this key (wrong HUB_SECRET_KEY, or it was tampered with)"
+        )
+    })?;
     String::from_utf8(plaintext).context("decrypted secret is not valid UTF-8")
 }
 
