@@ -30,8 +30,8 @@
 
   // the pipelines get checked while you type
   "yaml.schemas": {
-    "https://json.schemastore.org/github-workflow.json": ".gitea/workflows/*.yml",
-    "https://json.schemastore.org/github-action.json": ".gitea/actions/*/action.yml"
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml",
+    "https://json.schemastore.org/github-action.json": ".github/actions/*/action.yml"
   },
   "vitest.rootConfig": "hermes-server/web/vite.config.ts"
 }

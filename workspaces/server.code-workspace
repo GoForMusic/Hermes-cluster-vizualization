@@ -1,7 +1,7 @@
 {
-  // The hub (Rust) and HERMES, its web app: infraviz-server/. The other projects are hidden; pkg/, proto/ and .gitea/ stay, they are shared.
+  // The hub (Rust) and HERMES, its web app: hermes-server/. The other projects are hidden; pkg/, proto/ and .github/ stay, they are shared.
   // Open with: code workspaces/server.code-workspace
-  "folders": [{ "name": "infraviz: server", "path": ".." }],
+  "folders": [{ "name": "hermes: server", "path": ".." }],
 
   "settings": {
     "files.exclude": { "agent-linux": true, "agent-windows": true }
@@ -14,13 +14,13 @@
       {
         "label": "rust: clippy",
         "type": "shell",
-        "command": "cargo clippy --locked -p infraviz-hub --all-targets -- -D warnings",
+        "command": "cargo clippy --locked -p hermes-hub --all-targets -- -D warnings",
         "problemMatcher": ["$rustc"]
       },
       {
         "label": "rust: test",
         "type": "shell",
-        "command": "cargo test --locked -p infraviz-hub",
+        "command": "cargo test --locked -p hermes-hub",
         "group": { "kind": "test", "isDefault": true },
         "problemMatcher": ["$rustc"]
       },
@@ -28,14 +28,14 @@
         "label": "web: typecheck",
         "type": "shell",
         "command": "npm run typecheck",
-        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "options": { "cwd": "${workspaceFolder}/hermes-server/web" },
         "problemMatcher": ["$tsc"]
       },
       {
         "label": "web: test",
         "type": "shell",
         "command": "npm test",
-        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "options": { "cwd": "${workspaceFolder}/hermes-server/web" },
         "group": "test",
         "problemMatcher": []
       },
@@ -43,14 +43,14 @@
         "label": "web: test with coverage",
         "type": "shell",
         "command": "npx vitest run --coverage",
-        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "options": { "cwd": "${workspaceFolder}/hermes-server/web" },
         "problemMatcher": []
       },
       {
         "label": "web: build",
         "type": "shell",
         "command": "npm run build",
-        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "options": { "cwd": "${workspaceFolder}/hermes-server/web" },
         "group": "build",
         "problemMatcher": ["$tsc"]
       },
@@ -74,9 +74,9 @@
       {
         "label": "hub: run",
         "type": "shell",
-        "command": "set -a; . /tmp/ivhub.env; cargo run -p infraviz-hub",
+        "command": "set -a; . /tmp/ivhub.env; cargo run -p hermes-hub",
         "dependsOn": ["hub: dev key"],
-        "options": { "env": { "HUB_ADDR": ":8780", "HUB_DATA": "/tmp/ivhub", "HUB_WEB": "infraviz-server/web/dist" } },
+        "options": { "env": { "HUB_ADDR": ":8780", "HUB_DATA": "/tmp/ivhub", "HUB_WEB": "hermes-server/web/dist" } },
         "isBackground": true,
         "problemMatcher": []
       },
@@ -85,7 +85,7 @@
         "label": "web: dev server",
         "type": "shell",
         "command": "npm run dev",
-        "options": { "cwd": "${workspaceFolder}/infraviz-server/web", "env": { "HUB_URL": "http://localhost:8780" } },
+        "options": { "cwd": "${workspaceFolder}/hermes-server/web", "env": { "HUB_URL": "http://localhost:8780" } },
         "isBackground": true,
         "problemMatcher": []
       }
@@ -100,9 +100,9 @@
         "name": "Hub (debug)",
         "type": "lldb",
         "request": "launch",
-        "cargo": { "args": ["build", "-p", "infraviz-hub"], "filter": { "name": "infraviz-hub", "kind": "bin" } },
+        "cargo": { "args": ["build", "-p", "hermes-hub"], "filter": { "name": "hermes-hub", "kind": "bin" } },
         "cwd": "${workspaceFolder}",
-        "env": { "HUB_ADDR": ":8780", "HUB_DATA": "/tmp/ivhub", "HUB_WEB": "infraviz-server/web/dist" },
+        "env": { "HUB_ADDR": ":8780", "HUB_DATA": "/tmp/ivhub", "HUB_WEB": "hermes-server/web/dist" },
         "envFile": "/tmp/ivhub.env",
         "preLaunchTask": "hub: dev key"
       }

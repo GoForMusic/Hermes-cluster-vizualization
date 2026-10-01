@@ -52,7 +52,7 @@ hermes-server/
 agent-linux/            the agent: node mode (CRI), Kubernetes collector, Swarm collector; Dockerfile
 agent-windows/          the agent for Windows Swarm nodes: main, kernel32 CPU/memory; Dockerfile
 docs/                   architecture notes
-.gitea/workflows/       CI and publish pipelines
+.github/workflows/      CI and publish pipelines
 .devcontainer/          Rust + Node + protoc, run from VS Code with Docker
 Cargo.toml              ONE Cargo workspace for everything
 ```
@@ -94,7 +94,7 @@ The first visit asks you to create the admin account (only its password hash is 
 | `Kubernetes (agent)` | an agent inside the cluster reports to the hub (push) | apply the manifest the hub generates |
 | `Docker Swarm (agent)` | a global service, one agent per node, reports to the hub (push) | deploy the stack file the hub generates on a manager |
 
-The agent images are published to a registry your clusters can reach (the Gitea one works) by the pipelines below;
+The agent images are published to a registry your clusters can reach (GHCR works) by the pipelines below;
 the hub is told which images to put in the generated manifests with `AGENT_IMAGE` (Linux) and `AGENT_IMAGE_WINDOWS` (optional). See [TEST.md](TEST.md).
 
 Agents talk to the hub over **gRPC** on the same port as the web app. Put something in front of it that passes HTTP/2 and long-lived streams (Traefik, nginx, ...) — or skip the proxy and have the hub terminate TLS itself with `HUB_TLS_CERT`/`HUB_TLS_KEY` (both PEM files; see `hermes-server/deploy/docker-compose.yml`).
@@ -116,17 +116,9 @@ To ship a hub update: `git tag server-1.4.1 && git push origin server-1.4.1`, pu
 version when its link comes back and offers "Hub updated to v1.4.1 — reload". To update agents, change `AGENT_IMAGE` (the tag is the version), and
 the sources whose agents are older are marked.
 
-## Pipelines
+## Pipelines (GitHub Actions, `.github/workflows/`)
 
-Two identical sets of workflows, same jobs, same triggers — pick whichever CI you're actually running against:
-
-| | `.github/workflows/` | `.gitea/workflows/` |
-|---|---|---|
-| Runner | GitHub-hosted (`ubuntu-latest`), free for a public repo | self-hosted (`act_runner` with Docker) |
-| Registry | `ghcr.io`, auth is the job's own `GITHUB_TOKEN` — no secrets to set up | an internal registry, needs `REGISTRY_USER` + `REGISTRY_TOKEN` repository secrets (a token with `write:package`) |
-| Release | `gh release create` | the Gitea API directly |
-
-Both share the composite actions in `.gitea/actions/` (installing `protoc`, `cargo-llvm-cov` and `cargo-nextest` — nothing Gitea-specific in them) and the PR-comment script (`.gitea/scripts/pr_report.py`, which talks to whichever host's API it's running on).
+Runs on GitHub-hosted runners (`ubuntu-latest`, free for a public repo). Images publish to `ghcr.io`, authenticated with the job's own `GITHUB_TOKEN` — no secrets to set up. Releases are created with `gh release create`.
 
 | Workflow | When | What |
 |---|---|---|

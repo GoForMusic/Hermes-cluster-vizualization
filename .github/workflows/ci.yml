@@ -1,6 +1,5 @@
 # Build and test on every pull request, only for the parts that changed.
 # The one required check to set in the branch protection of main is:  ci-ok
-# Mirrors .gitea/workflows/ci.yml (the private Gitea pipeline); this one runs on GitHub-hosted runners, free for a public repo.
 #
 # What runs when:
 #   hermes-server/**  -> hub (its image contains the web app too)
@@ -33,7 +32,7 @@ jobs:
       agent_windows: ${{ steps.diff.outputs.agent_windows }}
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: 🔎 Work out what changed
@@ -58,16 +57,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 🧬 Install protoc
-        uses: ./.gitea/actions/setup-protoc
+        uses: ./.github/actions/setup-protoc
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with: { components: "rustfmt, clippy" }
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: 🧰 Install coverage tools
-        uses: ./.gitea/actions/setup-rust-coverage
+        uses: ./.github/actions/setup-rust-coverage
       - name: 🎨 Check formatting
         run: cargo fmt --check
       - name: 🧹 Lint (clippy)
@@ -77,7 +76,7 @@ jobs:
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
         env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: python3 .gitea/scripts/pr_report.py --key hub --title "🦀 Hub (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+        run: python3 .github/scripts/pr_report.py --key hub --title "🦀 Hub (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
       # the tests write the TypeScript types of the web app: they must be what is committed
       - name: 📝 Check the generated TypeScript types are committed
         run: git diff --exit-code -- hermes-server/web/src/generated
@@ -93,9 +92,9 @@ jobs:
         working-directory: hermes-server/web
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 🟢 Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with: { node-version: 22, cache: npm, cache-dependency-path: hermes-server/web/package-lock.json }
       - name: 📦 Install dependencies
         run: npm ci
@@ -107,7 +106,7 @@ jobs:
         if: always()
         working-directory: .
         env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: python3 .gitea/scripts/pr_report.py --key web --title "🌐 Web (TypeScript)" --junit hermes-server/web/junit.xml --coverage hermes-server/web/coverage/coverage-summary.json --coverage-format vitest
+        run: python3 .github/scripts/pr_report.py --key web --title "🌐 Web (TypeScript)" --junit hermes-server/web/junit.xml --coverage hermes-server/web/coverage/coverage-summary.json --coverage-format vitest
       - name: 🔨 Build
         run: npm run build
 
@@ -117,16 +116,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 🧬 Install protoc
-        uses: ./.gitea/actions/setup-protoc
+        uses: ./.github/actions/setup-protoc
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with: { components: "rustfmt, clippy" }
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: 🧰 Install coverage tools
-        uses: ./.gitea/actions/setup-rust-coverage
+        uses: ./.github/actions/setup-rust-coverage
       - name: 🎨 Check formatting
         run: cargo fmt --check
       - name: 🧹 Lint (clippy)
@@ -136,7 +135,7 @@ jobs:
       - name: 💬 Comment the test report and coverage on the pull request
         if: always()
         env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: python3 .gitea/scripts/pr_report.py --key agent-linux --title "🐧 Linux agent (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+        run: python3 .github/scripts/pr_report.py --key agent-linux --title "🐧 Linux agent (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
       - name: 🐳 Build the agent image
         run: docker build -f agent-linux/Dockerfile -t hermes-agent-linux:ci .
 
@@ -149,18 +148,18 @@ jobs:
       CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 🪟 Install the MinGW cross compiler
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
       - name: 🧬 Install protoc
-        uses: ./.gitea/actions/setup-protoc
+        uses: ./.github/actions/setup-protoc
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with: { components: "rustfmt, clippy", targets: x86_64-pc-windows-gnu }
       - name: 📦 Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: 🧰 Install test runner
-        uses: ./.gitea/actions/setup-rust-coverage
+        uses: ./.github/actions/setup-rust-coverage
       - name: 🎨 Check formatting
         run: cargo fmt --check
       # what can run here runs; the Windows specific code is compiled and linted for Windows, and the image build compiles it again
@@ -170,12 +169,12 @@ jobs:
       - name: 💬 Comment the test report on the pull request
         if: always()
         env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: python3 .gitea/scripts/pr_report.py --key agent-windows --title "🪟 Windows agent (Rust)" --junit target/nextest/ci/junit.xml
+        run: python3 .github/scripts/pr_report.py --key agent-windows --title "🪟 Windows agent (Rust)" --junit target/nextest/ci/junit.xml
       - name: 🧹 Lint for Windows (clippy)
         run: cargo clippy --locked -p hermes-agent-windows --target x86_64-pc-windows-gnu --all-targets -- -D warnings
       # a Linux daemon can't load a Windows image into its store, so build without exporting (releases push straight to the registry)
       - name: 🔧 Set up buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: 🐳 Build the Windows agent image
         run: docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 --output type=cacheonly .
 

@@ -1,7 +1,6 @@
 # Publishes the Linux agent image to GHCR when you push a tag agent-linux-X.Y.Z:
 #   git tag agent-linux-1.0.1 && git push origin agent-linux-1.0.1
-# No secrets to configure: GHCR auth uses the job's own GITHUB_TOKEN. Mirrors .gitea/workflows/publish-agent-linux.yml
-# (the private Gitea pipeline, which still publishes to the internal registry).
+# No secrets to configure: GHCR auth uses the job's own GITHUB_TOKEN.
 name: publish-agent-linux
 
 on:
@@ -17,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 🔖 Read the version from the tag
         id: v
         run: |
@@ -25,7 +24,7 @@ jobs:
           echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "the tag must look like agent-linux-1.2.3"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: 🧬 Install protoc
-        uses: ./.gitea/actions/setup-protoc
+        uses: ./.github/actions/setup-protoc
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: 📦 Cache cargo
@@ -33,18 +32,18 @@ jobs:
       - name: 🧪 Test the agent
         run: cargo test --locked -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux
       - name: 🔧 Set up buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: 🏷️ Image name (GHCR wants it lowercase)
         run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}/hermes-agent-linux' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
       - name: 🔑 Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - name: 🚀 Build and push the agent image (linux/amd64)
         run: |
           docker buildx build -f agent-linux/Dockerfile --platform linux/amd64 \
             --build-arg VERSION=${{ steps.v.outputs.version }} \
             -t "$IMAGE:${{ steps.v.outputs.version }}" --push .
-      # a package pushed from this repo's own workflow is linked to it automatically; no extra step needed, unlike Gitea.
+      # a package pushed from this repo's own workflow is linked to it automatically; no extra step needed.
       - name: 🏷️ Create the release
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |

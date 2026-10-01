@@ -9,10 +9,10 @@ Un singur repo, cu trei foldere de livrat:
 | Folder | Ce conține | Imagine publicată |
 |---|---|---|
 | **`hermes-server/`** | Hub-ul (Rust: API, gRPC pentru agenți, alerte, baza de date), site-ul HERMES (dashboard + TV, React + TypeScript) în `web/`, `deploy/` | `hermes-server`, la tag `server-X.Y.Z` |
-| **`agent-linux/`** | Agentul pentru Linux (Rust). **Acum doar modul `node`**: colectoarele Kubernetes și Swarm nu sunt portate încă | `hermes-agent-linux`, la tag `agent-linux-X.Y.Z` (`linux/amd64`) |
+| **`agent-linux/`** | Agentul pentru Linux (Rust): modul `node` (heartbeat + pod-uri prin runtime), colectorul Kubernetes și cel Swarm | `hermes-agent-linux`, la tag `agent-linux-X.Y.Z` (`linux/amd64`) |
 | **`agent-windows/`** | Agentul pentru noduri Docker Swarm cu Windows (Rust; compilat și verificat pe structură, **nerulat încă pe un Windows real**) | `hermes-agent-windows`, la tag `agent-windows-X.Y.Z` (`windows/amd64`) |
 
-`pkg/` și `proto/` conțin codul comun. Imaginile se publică automat din pipeline (GitHub Actions sau Gitea, vezi README.md) când dai tag-ul potrivit. Kubernetes **nu** are nevoie de agent Windows: agentul Linux vede tot clusterul prin API, inclusiv nodurile Windows.
+`pkg/` și `proto/` conțin codul comun. Imaginile se publică automat din pipeline-ul GitHub Actions (vezi README.md) când dai tag-ul potrivit. Kubernetes **nu** are nevoie de agent Windows: agentul Linux vede tot clusterul prin API, inclusiv nodurile Windows.
 
 ## 0. Înainte de orice
 
