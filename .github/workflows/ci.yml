@@ -178,6 +178,30 @@ jobs:
       - name: 🐳 Build the Windows agent image
         run: docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 --output type=cacheonly .
 
+  # The job above cross-compiles for Windows but never runs the result (it can't, on Linux) — so the one `unsafe` block in the
+  # workspace (the two kernel32 calls, see windowshost.rs) has never actually executed in CI. This does, on a real Windows runner,
+  # natively (no mingw): it both compiles and runs cfg(windows) code for the first time.
+  agent-windows-native:
+    needs: changes
+    if: needs.changes.outputs.agent_windows == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+      - name: 🧬 Install protoc
+        shell: pwsh
+        run: |
+          $version = "29.3"
+          Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v$version/protoc-$version-win64.zip" -OutFile protoc.zip
+          Expand-Archive protoc.zip -DestinationPath "$env:RUNNER_TEMP\protoc"
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\protoc\bin"
+      - name: 🦀 Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: 📦 Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: 🧪 Test natively (the real kernel32 calls, not just cross-compiled)
+        run: cargo test --locked -p hermes-swarm -p hermes-agent-windows
+
   # The single required check: green when every job that was needed passed or was skipped because nothing it depends on changed.
   ci-ok:
     if: always()
