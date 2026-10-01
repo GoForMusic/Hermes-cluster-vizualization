@@ -31,9 +31,6 @@ jobs:
       - name: 🦀 Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: 📦 Cache cargo
-        uses: Swatinem/rust-cache@v2
-
       - name: 🧪 Test the hub
         run: cargo test --locked -p hermes-hub
 
