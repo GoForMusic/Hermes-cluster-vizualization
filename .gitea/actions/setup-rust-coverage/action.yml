@@ -1,0 +1,18 @@
+# cargo-llvm-cov (coverage) and cargo-nextest (test runner with a JUnit report), pinned, as the prebuilt binaries their projects publish.
+name: setup-rust-coverage
+description: Install cargo-llvm-cov and cargo-nextest, and the LLVM tools coverage needs
+runs:
+  using: composite
+  steps:
+    - name: 🧰 Download cargo-llvm-cov and cargo-nextest and install them
+      shell: bash
+      run: |
+        LLVM_COV_VERSION=0.9.1
+        NEXTEST_VERSION=0.9.146
+        rustup component add llvm-tools-preview
+        curl -fsSL "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" | sudo tar -xz -C /usr/local/bin
+        nextest="https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/cargo-nextest-${NEXTEST_VERSION}-x86_64-unknown-linux-gnu"
+        curl -fsSL -o /tmp/nextest.tar.gz "$nextest.tar.gz"
+        echo "$(curl -fsSL "$nextest.sha256" | cut -d' ' -f1)  /tmp/nextest.tar.gz" | sha256sum -c -
+        sudo tar -xzf /tmp/nextest.tar.gz -C /usr/local/bin
+        cargo llvm-cov --version && cargo nextest --version

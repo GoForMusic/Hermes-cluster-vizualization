@@ -1,0 +1,37 @@
+{
+  // Shared by every way of opening the repository (the folder itself, the dev container, the workspaces/ files).
+  "rust-analyzer.check.command": "clippy",
+  // a save checks the crate of the file, not the whole workspace
+  "rust-analyzer.check.workspace": false,
+  // rust-analyzer builds in its own directory: it does not wait for (or block) a `cargo run` or `cargo test` of yours
+  "rust-analyzer.cargo.targetDir": true,
+  "editor.formatOnSave": true,
+  "[rust]": { "editor.defaultFormatter": "rust-lang.rust-analyzer" },
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "[markdown]": { "files.trimTrailingWhitespace": false },
+
+  // build output, dependencies and generated reports are not something to search in or to watch
+  "files.watcherExclude": {
+    "**/target/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true
+  },
+  "search.exclude": {
+    "**/target": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true,
+    "**/package-lock.json": true,
+    "**/Cargo.lock": true,
+    "hermes-server/web/src/generated": true
+  },
+
+  // the pipelines get checked while you type
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".gitea/workflows/*.yml",
+    "https://json.schemastore.org/github-action.json": ".gitea/actions/*/action.yml"
+  },
+  "vitest.rootConfig": "hermes-server/web/vite.config.ts"
+}

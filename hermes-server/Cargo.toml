@@ -1,0 +1,50 @@
+[package]
+name = "hermes-hub"
+description = "HERMES, the hub: receives the agents over gRPC, keeps the live topology, serves the web app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "hermes-hub"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+aes-gcm = "0.10.3"
+anyhow = "1.0.104"
+argon2 = "0.6.0"
+axum = { version = "0.8.9", features = ["macros"] }
+axum-server = { version = "0.8.0", default-features = false, features = ["tls-rustls-no-provider"] }
+base64 = "0.23.1"
+futures-util = "0.3.34"
+hex = "0.4.3"
+hermes-proto = { path = "../pkg/proto" }
+minijinja = "2.24.0"
+prost = "0.14.4"
+prost-types = "0.14.4"
+rand = "0.10.3"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "query", "rustls-no-provider"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std"] }
+semver = "1.0.28"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+subtle = "2.6.1"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "signal", "sync", "fs"] }
+tokio-stream = "0.1.19"
+tonic = "0.14.6"
+tower-http = { version = "0.7.1", features = ["fs", "set-header"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+ts-rs = { version = "12.0.1", features = ["serde-json-impl"] }
+
+[dev-dependencies]
+hermes-agentkit = { path = "../pkg/agentkit" }
+rcgen = "0.14.10"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "cookies", "rustls-no-provider"] }
+tempfile = "3.27.0"

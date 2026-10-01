@@ -1,0 +1,46 @@
+{
+  "name": "infraviz",
+  "build": { "dockerfile": "Dockerfile" },
+
+  "features": {
+    // docker CLI + the host's Docker daemon, to build and run the agent images from inside the container
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+
+  "runArgs": [
+    // Fedora runs SELinux in enforcing mode: without this the container cannot read the bind-mounted repository
+    "--security-opt=label=disable",
+    // agents in the lab VMs reach the hub on the host's address, and the hub reaches the clusters on the lab network
+    "--network=host"
+  ],
+
+  "mounts": [
+    // build output and downloaded crates live in volumes: much faster than a bind mount, and they survive rebuilds of the container
+    "source=infraviz-target,target=${containerWorkspaceFolder}/target,type=volume",
+    "source=infraviz-cargo-registry,target=/usr/local/cargo/registry,type=volume",
+    "source=infraviz-cargo-git,target=/usr/local/cargo/git,type=volume"
+  ],
+
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "remoteUser": "vscode",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "vadimcn.vscode-lldb",
+        "fill-labs.dependi",
+        "zxh404.vscode-proto3",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "editor.formatOnSave": true,
+        "[rust]": { "editor.defaultFormatter": "rust-lang.rust-analyzer" }
+      }
+    }
+  }
+}

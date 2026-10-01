@@ -1,0 +1,14 @@
+# The runner's apt protoc is too old (3.12, no proto3 optional by default); a release also brings the well-known-type includes.
+name: setup-protoc
+description: Install a recent protoc into /usr/local
+runs:
+  using: composite
+  steps:
+    - name: 🧬 Download protoc and install it into /usr/local
+      shell: bash
+      run: |
+        PROTOC_VERSION=29.3
+        sudo apt-get update && sudo apt-get install -y --no-install-recommends unzip
+        curl -fsSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+        sudo unzip -oq /tmp/protoc.zip -d /usr/local bin/protoc 'include/*'
+        protoc --version

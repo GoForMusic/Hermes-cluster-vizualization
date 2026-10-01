@@ -1,0 +1,48 @@
+# Infra Viz agent for Docker Swarm. One agent per node (global): every node reports its own CPU and memory,
+# and the agent on a manager also reports nodes, services and tasks. Deploy this from a swarm MANAGER.
+# A cluster can mix Linux and Windows nodes: each OS gets its own service and image.
+version: "3.8"
+services:
+  agent:
+    image: registry.example.com/infraviz/agent:1.2.3
+    # the socket is owned by root:docker, so the agent runs as root inside its container; everything else is locked down.
+    # NOTE: access to docker.sock is powerful (the API is not read-only even with a :ro mount).
+    user: "0"
+    read_only: true
+    cap_drop: [ALL]
+    environment:
+      HUB_URL: "https://hub.example.com:8765"
+      SOURCE_ID: "s1a2b3c4d5e6"
+      SOURCE_NAME: "prod cluster"
+      COLLECTOR: swarm
+      TOKEN: "0123456789abcdef0123456789abcdef0123456789abcdef"
+      AGENT_HOST: "s1a2b3c4d5e6:n:{{.Node.ID}}"   # Swarm fills in the node id: this node's own heartbeat says it is alive
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+      restart_policy:
+        condition: any
+  agent-windows:
+    image: registry.example.com/infraviz/agent-windows:1.2.3-ltsc2022
+    user: ContainerAdministrator   # reading the Docker named pipe needs it
+    environment:
+      HUB_URL: "https://hub.example.com:8765"
+      SOURCE_ID: "s1a2b3c4d5e6"
+      SOURCE_NAME: "prod cluster"
+      COLLECTOR: swarm
+      TOKEN: "0123456789abcdef0123456789abcdef0123456789abcdef"
+      DOCKER_SOCKET: "npipe:////./pipe/docker_engine"
+      AGENT_HOST: "s1a2b3c4d5e6:n:{{.Node.ID}}"
+    volumes:
+      - type: npipe
+        source: '\\.\pipe\docker_engine'
+        target: '\\.\pipe\docker_engine'
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == windows]
+      restart_policy:
+        condition: any

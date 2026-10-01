@@ -1,0 +1,111 @@
+{
+  // The hub (Rust) and HERMES, its web app: infraviz-server/. The other projects are hidden; pkg/, proto/ and .gitea/ stay, they are shared.
+  // Open with: code workspaces/server.code-workspace
+  "folders": [{ "name": "infraviz: server", "path": ".." }],
+
+  "settings": {
+    "files.exclude": { "agent-linux": true, "agent-windows": true }
+  },
+
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      { "label": "rust: format check", "type": "shell", "command": "cargo fmt --check", "problemMatcher": [] },
+      {
+        "label": "rust: clippy",
+        "type": "shell",
+        "command": "cargo clippy --locked -p infraviz-hub --all-targets -- -D warnings",
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        "label": "rust: test",
+        "type": "shell",
+        "command": "cargo test --locked -p infraviz-hub",
+        "group": { "kind": "test", "isDefault": true },
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        "label": "web: typecheck",
+        "type": "shell",
+        "command": "npm run typecheck",
+        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "problemMatcher": ["$tsc"]
+      },
+      {
+        "label": "web: test",
+        "type": "shell",
+        "command": "npm test",
+        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "group": "test",
+        "problemMatcher": []
+      },
+      {
+        "label": "web: test with coverage",
+        "type": "shell",
+        "command": "npx vitest run --coverage",
+        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "problemMatcher": []
+      },
+      {
+        "label": "web: build",
+        "type": "shell",
+        "command": "npm run build",
+        "options": { "cwd": "${workspaceFolder}/infraviz-server/web" },
+        "group": "build",
+        "problemMatcher": ["$tsc"]
+      },
+      {
+        // what the pipeline checks for the hub and the web app before a pull request, in its order; stops at the first failure
+        "label": "ci: verify server",
+        "dependsOrder": "sequence",
+        "dependsOn": ["rust: format check", "rust: clippy", "rust: test", "web: typecheck", "web: test"],
+        "problemMatcher": []
+      },
+
+      // ---- to look at the app
+      {
+        // the hub encrypts what it stores with HUB_SECRET_KEY: the key is made once and kept, or the stored sources would become unreadable
+        "label": "hub: dev key",
+        "type": "shell",
+        "command": "[ -f /tmp/ivhub.env ] || echo \"HUB_SECRET_KEY=$(openssl rand -hex 32)\" > /tmp/ivhub.env",
+        "presentation": { "reveal": "never" },
+        "problemMatcher": []
+      },
+      {
+        "label": "hub: run",
+        "type": "shell",
+        "command": "set -a; . /tmp/ivhub.env; cargo run -p infraviz-hub",
+        "dependsOn": ["hub: dev key"],
+        "options": { "env": { "HUB_ADDR": ":8780", "HUB_DATA": "/tmp/ivhub", "HUB_WEB": "infraviz-server/web/dist" } },
+        "isBackground": true,
+        "problemMatcher": []
+      },
+      {
+        // HERMES with hot reload, in front of the hub above: http://localhost:5173
+        "label": "web: dev server",
+        "type": "shell",
+        "command": "npm run dev",
+        "options": { "cwd": "${workspaceFolder}/infraviz-server/web", "env": { "HUB_URL": "http://localhost:8780" } },
+        "isBackground": true,
+        "problemMatcher": []
+      }
+    ]
+  },
+
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        // debug the hub with breakpoints; same key and data as the "hub: run" task, so both can share /tmp/ivhub
+        "name": "Hub (debug)",
+        "type": "lldb",
+        "request": "launch",
+        "cargo": { "args": ["build", "-p", "infraviz-hub"], "filter": { "name": "infraviz-hub", "kind": "bin" } },
+        "cwd": "${workspaceFolder}",
+        "env": { "HUB_ADDR": ":8780", "HUB_DATA": "/tmp/ivhub", "HUB_WEB": "infraviz-server/web/dist" },
+        "envFile": "/tmp/ivhub.env",
+        "preLaunchTask": "hub: dev key"
+      }
+    ]
+  }
+}

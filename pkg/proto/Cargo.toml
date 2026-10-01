@@ -1,0 +1,24 @@
+[package]
+name = "hermes-proto"
+description = "gRPC contract between the HERMES agents and the hub"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+prost = "0.14.4"
+prost-types = "0.14.4"
+serde_json = "1.0.151"
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+
+[build-dependencies]
+tonic-prost-build = "0.14.6"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio-stream = "0.1.19"

@@ -1,0 +1,24 @@
+[package]
+name = "hermes-agentkit"
+description = "What every HERMES agent shares: settings from the environment and the gRPC uplink to the hub"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+gethostname = "1.1.0"
+hermes-proto = { path = "../proto" }
+prost-types = "0.14.4"
+tokio = { version = "1.53.1", features = ["rt", "sync", "time", "macros", "signal"] }
+tokio-stream = "0.1.19"
+tonic = { version = "0.14.6", features = ["tls-ring", "tls-webpki-roots"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+serde_json = "1.0.151"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "test-util"] }

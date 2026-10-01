@@ -1,0 +1,64 @@
+# Publishes the hub image when you push a tag server-X.Y.Z:
+#   git tag server-1.0.0 && git push origin server-1.0.0
+# Needs two repository secrets: REGISTRY_USER and REGISTRY_TOKEN (an access token with the write:package scope).
+name: publish-server
+
+on:
+  push:
+    tags: ['server-*']
+
+env:
+  REGISTRY_URL: ${{ github.server_url }}
+
+jobs:
+  publish:
+    runs-on: homelab-linux
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🔖 Read the version from the tag
+        id: v
+        run: |
+          version="${GITHUB_REF_NAME#server-}"
+          echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "the tag must look like server-1.2.3"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: 🧬 Install protoc
+        uses: ./.gitea/actions/setup-protoc
+      - name: 🦀 Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: 📦 Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: 🧪 Test the hub
+        run: cargo test --locked -p hermes-hub
+      - name: 🟢 Install Node
+        uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: 🧪 Test the web app
+        run: npm ci && npm test
+        working-directory: hermes-server/web
+      - name: 🔧 Set up buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          # the BuildKit container must resolve the registry through the host DNS (it is internal), not 8.8.8.8
+          driver-opts: network=host
+      - name: 🌐 Work out the registry host
+        run: echo "REGISTRY=${REGISTRY_URL#*://}" >> "$GITHUB_ENV"
+      - name: 🔑 Log in to the registry
+        run: echo "${{ secrets.REGISTRY_TOKEN }}" | docker login "$REGISTRY" -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+      - name: 🚀 Build and push the hub image (linux/amd64)
+        run: |
+          docker buildx build -f hermes-server/Dockerfile --platform linux/amd64 \
+            --build-arg VERSION=${{ steps.v.outputs.version }} \
+            -t "$REGISTRY/${{ github.repository_owner }}/hermes-server:${{ steps.v.outputs.version }}" --push .
+      - name: 🔗 Link the package to the repository
+        # already linked on later versions, so a failure here is not fatal
+        run: |
+          curl -sS -X POST -H "Authorization: token ${{ secrets.REGISTRY_TOKEN }}" \
+            "${{ github.server_url }}/api/v1/packages/${{ github.repository_owner }}/container/hermes-server/-/link/${{ github.event.repository.name }}" \
+            -w ' -> HTTP %{http_code}\n' || true
+      - name: 🏷️ Create the release
+        run: |
+          curl -sS -X POST -H "Authorization: token ${{ secrets.REGISTRY_TOKEN }}" -H 'Content-Type: application/json' \
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/releases" \
+            -d "{\"tag_name\":\"$GITHUB_REF_NAME\",\"name\":\"$GITHUB_REF_NAME\",\"body\":\"Image: \`$REGISTRY/${{ github.repository_owner }}/hermes-server:${{ steps.v.outputs.version }}\`\"}" \
+            -w ' -> HTTP %{http_code}\n' || true

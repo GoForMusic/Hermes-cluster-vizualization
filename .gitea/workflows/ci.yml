@@ -1,0 +1,186 @@
+# Build and test on every pull request, only for the parts that changed.
+# The one required check to set in the branch protection of main is:  ci-ok
+#
+# What runs when:
+#   hermes-server/**  -> hub (its image contains the web app too)
+#   hermes-server/web/** -> web
+#   agent-linux/**      -> agent-linux
+#   agent-windows/**    -> agent-windows
+#   pkg/**, proto/**, Cargo.*, .gitea/** -> everything (shared by both)
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+
+# a new commit on the PR cancels the run still going for the previous one
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: homelab-linux
+    outputs:
+      hub: ${{ steps.diff.outputs.hub }}
+      agent_linux: ${{ steps.diff.outputs.agent_linux }}
+      web: ${{ steps.diff.outputs.web }}
+      agent_windows: ${{ steps.diff.outputs.agent_windows }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 🔎 Work out what changed
+        id: diff
+        run: |
+          files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          echo "changed files:"; echo "$files"
+          shared=false; hub=false; linux=false; web=false; windows=false
+          echo "$files" | grep -qE '^(pkg/|proto/|Cargo\.(toml|lock)$|\.gitea/)' && shared=true
+          echo "$files" | grep -qE '^hermes-server/' && hub=true
+          echo "$files" | grep -q '^agent-linux/' && linux=true
+          echo "$files" | grep -q '^hermes-server/web/' && web=true
+          echo "$files" | grep -q '^agent-windows/' && windows=true
+          echo "hub=$([ $shared = true ] || [ $hub = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "agent_linux=$([ $shared = true ] || [ $linux = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "web=$([ $web = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "agent_windows=$([ $shared = true ] || [ $windows = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  hub:
+    needs: changes
+    if: needs.changes.outputs.hub == 'true'
+    runs-on: homelab-linux
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🧬 Install protoc
+        uses: ./.gitea/actions/setup-protoc
+      - name: 🦀 Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      - name: 📦 Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: 🧰 Install coverage tools
+        uses: ./.gitea/actions/setup-rust-coverage
+      - name: 🎨 Check formatting
+        run: cargo fmt --check
+      - name: 🧹 Lint (clippy)
+        run: cargo clippy --locked -p hermes-hub --all-targets -- -D warnings
+      - name: 🧪 Test with coverage
+        run: cargo llvm-cov nextest --locked --profile ci -p hermes-hub --ignore-filename-regex '/(tests|examples)/' --json --summary-only --output-path target/coverage.json
+      - name: 💬 Comment the test report and coverage on the pull request
+        if: always()
+        env: { GITEA_TOKEN: "${{ github.token }}" }
+        run: python3 .gitea/scripts/pr_report.py --key hub --title "🦀 Hub (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+      # the tests write the TypeScript types of the web app: they must be what is committed
+      - name: 📝 Check the generated TypeScript types are committed
+        run: git diff --exit-code -- hermes-server/web/src/generated
+      - name: 🐳 Build the hub image
+        run: docker build -f hermes-server/Dockerfile -t hermes-server:ci .
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: homelab-linux
+    defaults:
+      run:
+        working-directory: hermes-server/web
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🟢 Install Node
+        uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: hermes-server/web/package-lock.json }
+      - name: 📦 Install dependencies
+        run: npm ci
+      - name: 🔬 Type-check
+        run: npm run typecheck
+      - name: 🧪 Test with coverage
+        run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=junit.xml
+      - name: 💬 Comment the test report and coverage on the pull request
+        if: always()
+        working-directory: .
+        env: { GITEA_TOKEN: "${{ github.token }}" }
+        run: python3 .gitea/scripts/pr_report.py --key web --title "🌐 Web (TypeScript)" --junit hermes-server/web/junit.xml --coverage hermes-server/web/coverage/coverage-summary.json --coverage-format vitest
+      - name: 🔨 Build
+        run: npm run build
+
+  agent-linux:
+    needs: changes
+    if: needs.changes.outputs.agent_linux == 'true'
+    runs-on: homelab-linux
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🧬 Install protoc
+        uses: ./.gitea/actions/setup-protoc
+      - name: 🦀 Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      - name: 📦 Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: 🧰 Install coverage tools
+        uses: ./.gitea/actions/setup-rust-coverage
+      - name: 🎨 Check formatting
+        run: cargo fmt --check
+      - name: 🧹 Lint (clippy)
+        run: cargo clippy --locked -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux --all-targets -- -D warnings
+      - name: 🧪 Test with coverage
+        run: cargo llvm-cov nextest --locked --profile ci -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux --ignore-filename-regex '/(tests|examples)/' --json --summary-only --output-path target/coverage.json
+      - name: 💬 Comment the test report and coverage on the pull request
+        if: always()
+        env: { GITEA_TOKEN: "${{ github.token }}" }
+        run: python3 .gitea/scripts/pr_report.py --key agent-linux --title "🐧 Linux agent (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
+      - name: 🐳 Build the agent image
+        run: docker build -f agent-linux/Dockerfile -t hermes-agent-linux:ci .
+
+  agent-windows:
+    needs: changes
+    if: needs.changes.outputs.agent_windows == 'true'
+    runs-on: homelab-linux
+    env:
+      CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
+      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🪟 Install the MinGW cross compiler
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+      - name: 🧬 Install protoc
+        uses: ./.gitea/actions/setup-protoc
+      - name: 🦀 Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy", targets: x86_64-pc-windows-gnu }
+      - name: 📦 Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: 🧰 Install test runner
+        uses: ./.gitea/actions/setup-rust-coverage
+      - name: 🎨 Check formatting
+        run: cargo fmt --check
+      # what can run here runs; the Windows specific code is compiled and linted for Windows, and the image build compiles it again
+      # (no coverage here: it would only measure what compiles on Linux, which says little about an agent for Windows)
+      - name: 🧪 Test
+        run: cargo nextest run --locked --profile ci -p hermes-swarm -p hermes-agent-windows
+      - name: 💬 Comment the test report on the pull request
+        if: always()
+        env: { GITEA_TOKEN: "${{ github.token }}" }
+        run: python3 .gitea/scripts/pr_report.py --key agent-windows --title "🪟 Windows agent (Rust)" --junit target/nextest/ci/junit.xml
+      - name: 🧹 Lint for Windows (clippy)
+        run: cargo clippy --locked -p hermes-agent-windows --target x86_64-pc-windows-gnu --all-targets -- -D warnings
+      # a Linux daemon can't load a Windows image into its store, so build without exporting (releases push straight to the registry)
+      - name: 🐳 Build the Windows agent image
+        run: docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 --output type=cacheonly .
+
+  # The single required check: green when every job that was needed passed or was skipped because nothing it depends on changed.
+  ci-ok:
+    if: always()
+    needs: [changes, hub, web, agent-linux, agent-windows]
+    runs-on: homelab-linux
+    steps:
+      - name: 🚦 Fail if any job failed or was cancelled
+        run: |
+          echo "changes=${{ needs.changes.result }} hub=${{ needs.hub.result }} web=${{ needs.web.result }} agent-linux=${{ needs.agent-linux.result }} agent-windows=${{ needs.agent-windows.result }}"
+          case "${{ needs.changes.result }} ${{ needs.hub.result }} ${{ needs.web.result }} ${{ needs.agent-linux.result }} ${{ needs.agent-windows.result }}" in
+            *failure*|*cancelled*) exit 1 ;;
+          esac

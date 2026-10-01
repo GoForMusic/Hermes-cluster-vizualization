@@ -1,0 +1,234 @@
+// The contract between an agent and the hub. The agent opens ONE stream and keeps it open; everything travels on it.
+//
+// Compatibility rules (the hub must keep accepting older agents):
+//   * never reuse or renumber a field; retire it with `reserved`
+//   * add new fields and new `oneof` cases only; a receiver ignores what it does not know
+//   * an enum gets a new value only at the end, and 0 always means "not set"
+syntax = "proto3";
+
+package infraviz.v1;
+
+import "google/protobuf/struct.proto";
+
+service AgentService {
+  // Authentication: metadata `authorization: Bearer <agent token>` (the token the hub issued for the source).
+  // The first message from the agent must be `hello`. An agent that is silent for 20 s makes its source "down".
+  rpc Session(stream AgentMessage) returns (stream HubMessage);
+}
+
+// ---- agent -> hub ------------------------------------------------------------------------------------------
+
+message AgentMessage {
+  oneof message {
+    Hello hello = 1;
+    Batch batch = 2;
+    UpgradeStatus upgrade_status = 3;
+  }
+}
+
+message Hello {
+  // Version of this contract the agent speaks. Starts at 1.
+  uint32 protocol = 1;
+  // Tells this agent instance from the others of the same source (Swarm runs one on every node).
+  string agent = 2;
+  // Id of the host node this agent runs on, when it knows. Its heartbeat then says that host is alive whatever happens to the
+  // cluster's control plane (the only thing that can tell otherwise).
+  string host = 3;
+  // Build of the agent, e.g. "1.4.2".
+  string version = 4;
+  // What this agent collects: kubernetes | swarm | node.
+  string collector = 5;
+  // What this agent can do besides reporting. "upgrade": it can change its own image when the hub asks (only when the install manifest allowed it).
+  repeated string features = 6;
+}
+
+// The answer to an `Upgrade`. The new version itself is proved by the next hello: this only says how the attempt went.
+message UpgradeStatus {
+  UpgradeState state = 1;
+  // The version that was asked for.
+  string version = 2;
+  // Why, when it did not go through.
+  string message = 3;
+}
+
+enum UpgradeState {
+  UPGRADE_STATE_UNSPECIFIED = 0;
+  // The images were changed; the cluster replaces the agents now.
+  UPGRADE_STATE_STARTED = 1;
+  // Nothing for this agent to do: another agent of the source does it (a Swarm worker), or it already runs that version.
+  UPGRADE_STATE_SKIPPED = 2;
+  // Refused or failed; `message` says why. A change that did not take was put back.
+  UPGRADE_STATE_FAILED = 3;
+}
+
+// An empty batch is a heartbeat.
+message Batch {
+  repeated Event events = 1;
+}
+
+message Event {
+  oneof kind {
+    Snapshot snapshot = 1;
+    Status status = 2;
+    Meta meta = 3;
+    Metrics metrics = 4;
+    Report report = 5;
+    Alive alive = 6;
+    Contribution contribution = 7;
+    Flows flows = 8;
+  }
+}
+
+// The whole topology of the source. It replaces whatever the hub had.
+message Snapshot {
+  repeated Node nodes = 1;
+  repeated Edge edges = 2;
+}
+
+// The state of one node changed.
+message Status {
+  string id = 1;
+  Own own = 2;
+  string reason = 3;
+}
+
+// Some facts about one node changed; keys in `patch` overwrite the old ones.
+message Meta {
+  string id = 1;
+  google.protobuf.Struct patch = 2;
+}
+
+// A sample of the numbers (cpu, memory, traffic...). Only the newest one matters.
+message Metrics {
+  map<string, Values> nodes = 1;
+  map<string, double> edges = 2;
+}
+
+message Values {
+  map<string, double> values = 1;
+}
+
+// The collector's own state: an agent that is alive but cannot reach its cluster must not look healthy.
+message Report {
+  CollectorState state = 1;
+  string info = 2;
+}
+
+// The workload nodes that run on the agent's host, as the host itself sees them. It keeps them shown as running when the
+// control plane, the only other source of their state, cannot be reached.
+message Alive {
+  repeated string ids = 1;
+}
+
+// Nodes that only this agent can see, such as the volumes of its own machine: the manager of a swarm cannot read another node's volumes.
+// The hub adds them to the topology of the source, and each contribution replaces the previous one of the same host (`Hello.host`, or
+// the agent when it has none). A node names its parent host by id, as any node does. Sent again, whole, whenever it changes.
+message Contribution {
+  repeated Node nodes = 1;
+}
+
+// Who talked to whom on the agent's host, from the kernel's connection tracking, over the last interval. One entry for each pair of addresses
+// and port, with the rate in each direction. The hub matches the addresses with what it knows (pods, Services, nodes) and puts the rates on
+// the links of the map. Only the newest one matters.
+message Flows {
+  repeated Flow flows = 1;
+}
+
+message Flow {
+  // The address that opened the connection.
+  string src = 1;
+  // The address it asked for. A Service address stays a Service address here, whichever pod ended up answering.
+  string dst = 2;
+  // The address that answered, when it is not `dst` (the pod behind a Service or a node port); empty otherwise.
+  string served_by = 3;
+  uint32 port = 4;
+  // "tcp" or "udp".
+  string proto = 5;
+  // Mbit/s from `src` to `dst`, and back.
+  double out_mbps = 6;
+  double in_mbps = 7;
+}
+
+// ---- hub -> agent ------------------------------------------------------------------------------------------
+
+message HubMessage {
+  oneof message {
+    Resync resync = 1;
+    Upgrade upgrade = 2;
+  }
+}
+
+// Run this version of the agent. Only the tag travels: the agent keeps its own image name (registry and repository), so a hub cannot
+// point it anywhere else.
+message Upgrade {
+  string version = 1;
+}
+
+// The hub has no topology for this agent (it restarted): send the snapshot again.
+message Resync {}
+
+// ---- shared ------------------------------------------------------------------------------------------------
+
+message Node {
+  string id = 1;
+  NodeKind kind = 2;
+  string name = 3;
+  optional string parent = 4;
+  Provider provider = 5;
+  // State reported by the source. The effective status is derived from it later (everything on a crashed host is unknown).
+  Own own = 6;
+  string reason = 7;
+  // When the node entered its current state, in milliseconds since the epoch.
+  int64 since = 8;
+  map<string, double> m = 9;
+  google.protobuf.Struct meta = 10;
+}
+
+// A traffic link (rates in Mbit/s) or a control-plane link.
+message Edge {
+  string id = 1;
+  string from = 2;
+  string to = 3;
+  double base = 4;
+  double mbps = 5;
+  EdgeType type = 6;
+}
+
+enum Own {
+  OWN_UNSPECIFIED = 0;
+  OWN_OK = 1;
+  OWN_WARN = 2;
+  OWN_CRIT = 3;
+}
+
+enum NodeKind {
+  NODE_KIND_UNSPECIFIED = 0;
+  NODE_KIND_CLUSTER = 1;
+  NODE_KIND_HOST = 2;
+  NODE_KIND_WORKLOAD = 3;
+  NODE_KIND_VOLUME = 4;
+  // A way to reach workloads: a Docker network, a Kubernetes Service, an Ingress, a load balancer, "outside". Its `meta.netKind` says which.
+  NODE_KIND_NETWORK = 5;
+}
+
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_KUBERNETES = 1;
+  PROVIDER_SWARM = 2;
+  PROVIDER_NOMAD = 3;
+  PROVIDER_STORAGE = 4;
+}
+
+enum EdgeType {
+  EDGE_TYPE_UNSPECIFIED = 0;
+  EDGE_TYPE_TRAFFIC = 1;
+  EDGE_TYPE_CONTROL = 2;
+  // A path exists, with no measured rate: a network and the workloads on it, an Ingress and the Services it routes to.
+  EDGE_TYPE_ROUTE = 3;
+}
+
+enum CollectorState {
+  COLLECTOR_STATE_UNSPECIFIED = 0;
+  COLLECTOR_STATE_CONNECTED = 1;
+  COLLECTOR_STATE_ERROR = 2;
+}

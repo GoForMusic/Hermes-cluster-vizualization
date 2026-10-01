@@ -1,0 +1,52 @@
+{
+  // The agent for Docker Swarm nodes running Windows: agent-windows/. The other projects are hidden; pkg/, proto/ and .gitea/ stay, they are shared.
+  // Open with: code workspaces/agent-windows.code-workspace
+  //
+  // rust-analyzer analyses for Windows here, or the code behind #[cfg(windows)] would be greyed out. That needs the target
+  // (`rustup target add x86_64-pc-windows-gnu`); the crates with C code (the hub's SQLite) also want MinGW (`gcc-mingw-w64-x86-64`)
+  // to build for it, without it rust-analyzer reports an error in those crates, not in the agent.
+  "folders": [{ "name": "infraviz: agent-windows", "path": ".." }],
+
+  "settings": {
+    "files.exclude": { "infraviz-server": true, "agent-linux": true },
+    "rust-analyzer.cargo.target": "x86_64-pc-windows-gnu"
+  },
+
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      { "label": "rust: format check", "type": "shell", "command": "cargo fmt --check", "problemMatcher": [] },
+      {
+        // the Windows specific code is linted for Windows; what can run on this machine runs (rust: test)
+        "label": "rust: clippy (Windows)",
+        "type": "shell",
+        "command": "cargo clippy --locked -p infraviz-agent-windows --target x86_64-pc-windows-gnu --all-targets -- -D warnings",
+        "options": {
+          "env": { "CC_x86_64_pc_windows_gnu": "x86_64-w64-mingw32-gcc", "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER": "x86_64-w64-mingw32-gcc" }
+        },
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        "label": "rust: test",
+        "type": "shell",
+        "command": "cargo test --locked -p infraviz-swarm -p infraviz-agent-windows",
+        "group": { "kind": "test", "isDefault": true },
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        // what the pipeline checks for this agent before a pull request, in its order; stops at the first failure
+        "label": "ci: verify agent-windows",
+        "dependsOrder": "sequence",
+        "dependsOn": ["rust: format check", "rust: test", "rust: clippy (Windows)"],
+        "problemMatcher": []
+      },
+      {
+        // a Linux Docker cannot keep a Windows image, so this only checks that the image builds (a release pushes it to the registry)
+        "label": "image: check the build",
+        "type": "shell",
+        "command": "docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 --output type=cacheonly .",
+        "problemMatcher": []
+      }
+    ]
+  }
+}

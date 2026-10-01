@@ -1,0 +1,29 @@
+[package]
+name = "hermes-agent-windows"
+description = "HERMES, the agent for Windows nodes of a Docker Swarm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "infraviz-agent"
+path = "src/main.rs"
+
+# not the workspace's lints: this crate needs `unsafe` for two Win32 calls, and only in windowshost::win32
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[dependencies]
+anyhow = "1.0.104"
+hermes-agentkit = { path = "../pkg/agentkit" }
+hermes-swarm = { path = "../pkg/swarm" }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_SystemInformation", "Win32_System_Threading"] }

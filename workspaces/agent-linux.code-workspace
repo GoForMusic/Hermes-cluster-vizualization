@@ -1,0 +1,43 @@
+{
+  // The agent for Kubernetes and for Docker Swarm nodes running Linux: agent-linux/. The other projects are hidden; pkg/, proto/ and .gitea/ stay, they are shared.
+  // Open with: code workspaces/agent-linux.code-workspace
+  "folders": [{ "name": "infraviz: agent-linux", "path": ".." }],
+
+  "settings": {
+    "files.exclude": { "infraviz-server": true, "agent-windows": true }
+  },
+
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      { "label": "rust: format check", "type": "shell", "command": "cargo fmt --check", "problemMatcher": [] },
+      {
+        "label": "rust: clippy",
+        "type": "shell",
+        "command": "cargo clippy --locked -p infraviz-proto -p infraviz-agentkit -p infraviz-swarm -p infraviz-agent-linux --all-targets -- -D warnings",
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        "label": "rust: test",
+        "type": "shell",
+        "command": "cargo test --locked -p infraviz-proto -p infraviz-agentkit -p infraviz-swarm -p infraviz-agent-linux",
+        "group": { "kind": "test", "isDefault": true },
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        // what the pipeline checks for this agent before a pull request, in its order; stops at the first failure
+        "label": "ci: verify agent-linux",
+        "dependsOrder": "sequence",
+        "dependsOn": ["rust: format check", "rust: clippy", "rust: test"],
+        "problemMatcher": []
+      },
+      {
+        // the tag the compose file of the hub and the lab scripts expect; `iv.sh load-image infraviz-agent-linux:dev` (infraviz-lab) puts it in the VMs
+        "label": "image: build (dev)",
+        "type": "shell",
+        "command": "docker build -f agent-linux/Dockerfile -t infraviz-agent-linux:dev .",
+        "problemMatcher": []
+      }
+    ]
+  }
+}

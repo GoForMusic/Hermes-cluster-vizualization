@@ -1,0 +1,62 @@
+# Publishes the Windows agent images to GHCR when you push a tag agent-windows-X.Y.Z:
+#   git tag agent-windows-1.0.1 && git push origin agent-windows-1.0.1
+# A Windows image must match the Windows version of the nodes, so two images are published per version:
+#   hermes-agent-windows:1.0.1-ltsc2022   (Windows Server 2022)
+#   hermes-agent-windows:1.0.1-ltsc2019   (Windows Server 2019)
+# No secrets to configure: GHCR auth uses the job's own GITHUB_TOKEN. Mirrors .gitea/workflows/publish-agent-windows.yml
+# (the private Gitea pipeline, which still publishes to the internal registry).
+name: publish-agent-windows
+
+on:
+  push:
+    tags: ['agent-windows-*']
+
+permissions:
+  contents: write # to create the GitHub release
+  packages: write # to push to ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      - name: 🔖 Read the version from the tag
+        id: v
+        run: |
+          version="${GITHUB_REF_NAME#agent-windows-}"
+          echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "the tag must look like agent-windows-1.2.3"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: 🪟 Install the MinGW cross compiler
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+      - name: 🧬 Install protoc
+        uses: ./.gitea/actions/setup-protoc
+      - name: 🦀 Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy, targets: x86_64-pc-windows-gnu }
+      - name: 📦 Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: 🧪 Test the agent
+        run: cargo test --locked -p hermes-swarm -p hermes-agent-windows
+      - name: 🧹 Lint for Windows (clippy)
+        run: cargo clippy --locked -p hermes-agent-windows --target x86_64-pc-windows-gnu -- -D warnings
+        env: { CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc, CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc }
+      - name: 🔧 Set up buildx
+        uses: docker/setup-buildx-action@v3
+      - name: 🏷️ Image name (GHCR wants it lowercase)
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}/hermes-agent-windows' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: 🔑 Log in to GHCR
+        uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: 🚀 Build and push the agent images (Windows Server 2022 and 2019)
+        run: |
+          for ltsc in ltsc2022 ltsc2019; do
+            docker buildx build -f agent-windows/Dockerfile --platform windows/amd64 \
+              --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:$ltsc --build-arg VERSION=${{ steps.v.outputs.version }} \
+              -t "$IMAGE:${{ steps.v.outputs.version }}-$ltsc" --push .
+          done
+      # a package pushed from this repo's own workflow is linked to it automatically; no extra step needed, unlike Gitea.
+      - name: 🏷️ Create the release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Images: \`$IMAGE:${{ steps.v.outputs.version }}-ltsc2022\` and \`-ltsc2019\`"

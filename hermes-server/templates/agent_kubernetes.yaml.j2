@@ -1,0 +1,232 @@
+# Infra Viz agent for Kubernetes. Read-only: it can list nodes, pods and PVCs and read metrics, nothing else.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infraviz
+---
+{%- if PullSecretData %}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ PullSecret }}
+  namespace: infraviz
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: {{ PullSecretData }}
+---
+{%- endif %}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: infraviz-agent
+  namespace: infraviz
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: infraviz-agent
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "persistentvolumeclaims", "namespaces", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes/proxy", "nodes/stats"]
+    verbs: ["get"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: infraviz-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: infraviz-agent
+subjects:
+  - kind: ServiceAccount
+    name: infraviz-agent
+    namespace: infraviz
+---
+{%- if Upgrades %}
+# Allowed when this source was added: the dashboard's "Change agent version". The agent may read and patch these two objects, and only these
+# (its own Deployment and the node agents' DaemonSet), in this namespace: to change their image, which keeps its registry and repository.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: infraviz-agent-upgrade
+  namespace: infraviz
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["infraviz-agent"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    resourceNames: ["infraviz-node"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: infraviz-agent-upgrade
+  namespace: infraviz
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: infraviz-agent-upgrade
+subjects:
+  - kind: ServiceAccount
+    name: infraviz-agent
+    namespace: infraviz
+---
+{%- endif %}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: infraviz-agent
+  namespace: infraviz
+type: Opaque
+stringData:
+  token: "{{ Token }}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infraviz-agent
+  namespace: infraviz
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: infraviz-agent }
+  template:
+    metadata:
+      labels: { app: infraviz-agent }
+    spec:
+      serviceAccountName: infraviz-agent
+      nodeSelector:
+        kubernetes.io/os: linux   # the agent image is Linux; Windows nodes are watched through the API, no agent needed there
+      # Where it runs: on a control-plane node when there is one, because that is where the API it reads lives (if that node goes down
+      # the cluster is down anyway, and a dead worker never takes the agent with it). Preferred, not required: on clusters whose
+      # control plane is not visible (managed ones), or has no room, it runs on a Linux worker.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - { key: node-role.kubernetes.io/control-plane, operator: Exists }
+      # Failover: if the node the agent runs on goes down, Kubernetes starts it on another node. By default it waits 5 minutes
+      # before giving up on the node; 30 seconds here (about a minute in total, counting the time to notice the node is down).
+      tolerations:
+        - { key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }   # lets it run on a control-plane node
+        - { key: node-role.kubernetes.io/master, operator: Exists, effect: NoSchedule }          # the older name of the same taint
+        - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 30 }
+        - { key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 30 }
+{%- if PullSecret %}
+      imagePullSecrets:
+        - name: {{ PullSecret }}
+{%- endif %}
+      containers:
+        - name: agent
+          image: {{ Image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: HUB_URL, value: "{{ HubURL }}" }
+            - { name: SOURCE_ID, value: "{{ SourceID }}" }
+            - { name: SOURCE_NAME, value: "{{ SourceName }}" }
+            - { name: COLLECTOR, value: "kubernetes" }
+{%- if Upgrades %}
+            - { name: UPGRADES, value: "1" }
+{%- endif %}
+            - name: TOKEN
+              valueFrom:
+                secretKeyRef: { name: infraviz-agent, key: token }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+---
+# One small agent on every Linux node. Its heartbeat tells the hub that its node is alive, and it lists the pods running on the node
+# (from the container runtime), even when the control plane, the only other thing that knows, is down. (A single agent cannot do
+# this: when the control plane is down nothing can move it to another node.) It has no permissions in the cluster, but it does read
+# the container runtime's socket. NOTE: that socket gives full control of the node's containers, not read access only (the agent
+# makes one call, listing running containers), and it is owned by root, so this pod runs as root. To go without, remove CRI_SOCKET,
+# the mount and the volume: the node is still reported alive, its pods just show as unknown while the control plane is down.
+# The socket is containerd's default; k3s and RKE2 keep it elsewhere (for k3s: /run/k3s/containerd/containerd.sock).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: infraviz-node
+  namespace: infraviz
+spec:
+  selector:
+    matchLabels: { app: infraviz-node }
+  template:
+    metadata:
+      labels: { app: infraviz-node }
+    spec:
+      automountServiceAccountToken: false   # it never talks to the cluster API
+{%- if Flows %}
+      # Who talks to whom is switched on: the pod runs in the node's own network namespace (hostNetwork), because that is where the
+      # connections of every pod are tracked, and it reads /proc/net/nf_conntrack. It is still root with NO capabilities (NET_ADMIN is
+      # not needed) and it changes nothing on the node. The node needs net.netfilter.nf_conntrack_acct=1: the kernel counts bytes only then.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+{%- endif %}
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - { operator: Exists }   # every node, control plane included, whatever taints it has
+{%- if PullSecret %}
+      imagePullSecrets:
+        - name: {{ PullSecret }}
+{%- endif %}
+      containers:
+        - name: node
+          image: {{ Image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: HUB_URL, value: "{{ HubURL }}" }
+            - { name: SOURCE_ID, value: "{{ SourceID }}" }
+            - { name: SOURCE_NAME, value: "{{ SourceName }}" }
+            - { name: COLLECTOR, value: "node" }
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: { fieldPath: spec.nodeName }
+            - { name: AGENT_HOST, value: "{{ SourceID }}:n:$(NODE_NAME)" }
+            - { name: CRI_SOCKET, value: "/run/containerd/containerd.sock" }
+{%- if Flows %}
+            - { name: FLOWS, value: "1" }
+{%- endif %}
+            - name: TOKEN
+              valueFrom:
+                secretKeyRef: { name: infraviz-agent, key: token }
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+            limits: { memory: 64Mi }
+          securityContext:
+            runAsUser: 0   # the runtime socket is owned by root
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: cri, mountPath: /run/containerd/containerd.sock }
+      volumes:
+        - name: cri
+          hostPath: { path: /run/containerd/containerd.sock, type: Socket }

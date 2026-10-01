@@ -1,0 +1,34 @@
+name: Feature request
+description: Something you'd want HERMES to do that it doesn't yet.
+labels: ["✨ enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve
+      description: The situation that prompted this, not just the feature itself — it's easier to find the right design starting from the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: A rough idea is fine. Check TODO.md first — it might already be planned, with notes on why it isn't done yet.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Hub (hermes-server)
+        - HERMES (the web app)
+        - Linux agent
+        - Windows agent
+        - Install / upgrade flow
+        - Something else
+    validations:
+      required: false

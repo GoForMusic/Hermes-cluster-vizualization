@@ -1,0 +1,43 @@
+// The part of the Kubernetes Container Runtime Interface (CRI) the node agent uses: ListContainers.
+// Field numbers and names are those of k8s.io/cri-api (runtime.v1, api.proto), checked against v0.37.0; only the fields we read
+// are declared, everything else the runtime sends is skipped. containerd and CRI-O both serve this.
+syntax = "proto3";
+
+package runtime.v1;
+
+service RuntimeService {
+  rpc ListContainers(ListContainersRequest) returns (ListContainersResponse) {}
+}
+
+enum ContainerState {
+  CONTAINER_CREATED = 0;
+  CONTAINER_RUNNING = 1;
+  CONTAINER_EXITED = 2;
+  CONTAINER_UNKNOWN = 3;
+}
+
+message ContainerStateValue {
+  ContainerState state = 1;
+}
+
+message ContainerFilter {
+  string id = 1;
+  ContainerStateValue state = 2;
+  string pod_sandbox_id = 3;
+  map<string, string> label_selector = 4;
+}
+
+message ListContainersRequest {
+  ContainerFilter filter = 1;
+}
+
+message Container {
+  string id = 1;
+  string pod_sandbox_id = 2;
+  ContainerState state = 6;
+  map<string, string> labels = 8;
+}
+
+message ListContainersResponse {
+  repeated Container containers = 1;
+}

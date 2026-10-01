@@ -1,0 +1,6 @@
+# `cargo nextest run --profile ci` also writes the JUnit report the pull request comment is made from (target/nextest/ci/junit.xml)
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"

@@ -1,0 +1,10 @@
+.git
+.gitea
+docs
+*.md
+**/data
+**/*.db
+**/.env
+**/target
+**/node_modules
+**/dist

@@ -1,0 +1,1 @@
+On a swarm manager save it as agent.yml and run: docker stack deploy --with-registry-auth -c agent.yml infraviz. For a private registry run docker login on the manager first; for an image that exists only locally add --resolve-image never. The service is global: every node must be able to get the image.

@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in the hub, an agent, or HERMES (the web app) doesn't work as it should.
+labels: ["🐛 bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected instead, if it's not obvious.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Hub (hermes-server)
+        - HERMES (the web app)
+        - Linux agent
+        - Windows agent
+        - Install manifests / Add source
+        - Documentation
+        - Something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cluster
+    attributes:
+      label: Cluster type
+      options:
+        - Kubernetes
+        - Docker Swarm
+        - Both / not cluster-specific
+    validations:
+      required: false
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Hub version (status bar, or `GET /api/info`) and agent version (Admin → Sources).
+      placeholder: "hub 1.2.0, agent 1.2.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Hub log around the time it happened, and/or `kubectl logs`/`docker service logs` of the agent. The admin's **Logs** page (agent↔hub traffic) can help too — turn it on in Settings first. Redact anything you don't want public (hostnames, IPs, tokens).
+      render: text
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Steps, or what's unusual about your setup (CNI, container runtime, number of nodes...).

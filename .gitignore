@@ -1,0 +1,23 @@
+# local data and secrets
+data/
+.env
+*.db
+*.db-wal
+*.db-shm
+kubeconfig
+# build output / editor
+/bin/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Rust / Node build output
+/target/
+node_modules/
+dist/
+
+# test reports and coverage (CI makes them and comments them on the pull request)
+hermes-server/web/coverage/
+hermes-server/web/junit.xml
+__pycache__/

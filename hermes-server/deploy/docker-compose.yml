@@ -1,0 +1,34 @@
+name: infraviz
+
+services:
+  hub:
+    build:
+      context: ../..            # repository root: the hub is built from the Cargo workspace
+      dockerfile: infraviz-server/Dockerfile
+    container_name: infra-viz
+    restart: unless-stopped
+    # host networking: the hub must open connections to cluster API servers on the libvirt lab network
+    # (Docker's bridge network cannot: libvirt only accepts reply traffic towards its VMs).
+    network_mode: host
+    environment:
+      HUB_ADDR: ":${PORT:-8765}"
+      HUB_WEB: /web
+      HUB_DATA: /data
+      HUB_AGENT_IMAGE: "${AGENT_IMAGE:-hermes-agent-linux:dev}"          # Linux agent image the generated manifests point at (Gitea, Harbor, Docker Hub...)
+      HUB_AGENT_IMAGE_WINDOWS: "${AGENT_IMAGE_WINDOWS:-}"                  # optional: Windows agent image, adds a Windows service to Swarm stacks
+      HUB_AGENT_PULL_SECRET: "${AGENT_PULL_SECRET:-}"          # private registry: name of the pull secret created in the cluster
+      HUB_SECRET_KEY: "${HUB_SECRET_KEY:?generate one with: openssl rand -hex 32, then put it in .env}"  # AES key for credentials in SQLite
+      HUB_DEMO: "${HUB_DEMO:-0}"   # HUB_DEMO=1 turns on the development fixture; keep it off in production
+      # Optional, both or neither: the hub terminates TLS itself instead of needing a reverse proxy (Traefik, nginx...) in
+      # front of it. Leave unset if something else already does TLS for you (then HUB_ADDR is reached as plain HTTP/h2c,
+      # as today). To turn it on: uncomment these two, and the matching volume mount below.
+      # HUB_TLS_CERT: /certs/cert.pem
+      # HUB_TLS_KEY: /certs/key.pem
+    volumes:
+      # SQLite database: sources (+ credentials), settings, alert history, heartbeats
+      - hub-data:/data
+      # - ./certs:/certs:ro   # only needed with HUB_TLS_CERT/HUB_TLS_KEY above
+
+
+volumes:
+  hub-data:

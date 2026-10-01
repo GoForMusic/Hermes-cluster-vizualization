@@ -1,0 +1,53 @@
+# Infra Viz agent for Docker Swarm. One agent per node (global): every node reports its own CPU and memory,
+# and the agent on a manager also reports nodes, services and tasks. Deploy this from a swarm MANAGER.
+# A cluster can mix Linux and Windows nodes: each OS gets its own service and image.
+version: "3.8"
+services:
+  agent:
+    image: {{ Image }}
+    # the socket is owned by root:docker, so the agent runs as root inside its container; everything else is locked down.
+    # NOTE: access to docker.sock is powerful (the API is not read-only even with a :ro mount).
+    user: "0"
+    read_only: true
+    cap_drop: [ALL]
+    environment:
+      HUB_URL: "{{ HubURL }}"
+      SOURCE_ID: "{{ SourceID }}"
+      SOURCE_NAME: "{{ SourceName }}"
+      COLLECTOR: swarm
+      TOKEN: "{{ Token }}"
+      AGENT_HOST: "{{ SourceID }}:n:{{ "{{.Node.ID}}" }}"   # Swarm fills in the node id: this node's own heartbeat says it is alive
+{%- if Upgrades %}
+      UPGRADES: "1"   # allowed when this source was added: the dashboard's "Change agent version" (a manager's agent changes the image of these services)
+{%- endif %}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+      restart_policy:
+        condition: any
+{%- if WindowsImage %}
+  agent-windows:
+    image: {{ WindowsImage }}
+    user: ContainerAdministrator   # reading the Docker named pipe needs it
+    environment:
+      HUB_URL: "{{ HubURL }}"
+      SOURCE_ID: "{{ SourceID }}"
+      SOURCE_NAME: "{{ SourceName }}"
+      COLLECTOR: swarm
+      TOKEN: "{{ Token }}"
+      DOCKER_SOCKET: "npipe:////./pipe/docker_engine"
+      AGENT_HOST: "{{ SourceID }}:n:{{ "{{.Node.ID}}" }}"
+    volumes:
+      - type: npipe
+        source: '\\.\pipe\docker_engine'
+        target: '\\.\pipe\docker_engine'
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == windows]
+      restart_policy:
+        condition: any
+{%- endif %}
