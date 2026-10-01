@@ -3,7 +3,7 @@
 ## Before you start
 
 - For a bug or a small, obviously-right fix, just open a pull request.
-- For anything bigger (a new feature, a behavior change, a new dependency), open an issue first — check [TODO.md](TODO.md) too, it might already be planned, with notes on why it isn't done yet. Saves you from building something that gets redesigned in review.
+- For anything bigger (a new feature, a behavior change, a new dependency), open an issue first — check the [existing issues](https://github.com/GoForMusic/Hermes-cluster-vizualization/issues) too, it might already be planned, with notes on why it isn't done yet. Saves you from building something that gets redesigned in review.
 - Windows support (`agent-windows/`) is compiled and linted in CI but has never run on a real Windows node — if you can test it there, that's especially welcome.
 
 ## Set up
