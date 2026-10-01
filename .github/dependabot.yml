@@ -18,7 +18,7 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
-    labels: ["⬆️ dependencies", "🟨 javascript"]
+    labels: ["⬆️ dependencies", "🔷 typescript"]
 
   # The workflows themselves (actions/checkout, docker/*, ...) — would have caught the Node 20 deprecation on its own.
   # Reuses our own ⚙️ ci label rather than a separate "github_actions" one Dependabot would otherwise create.
