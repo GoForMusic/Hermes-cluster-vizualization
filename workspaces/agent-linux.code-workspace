@@ -1,10 +1,10 @@
 {
-  // The agent for Kubernetes and for Docker Swarm nodes running Linux: agent-linux/. The other projects are hidden; pkg/, proto/ and .gitea/ stay, they are shared.
+  // The agent for Kubernetes and for Docker Swarm nodes running Linux: agent-linux/. The other projects are hidden; pkg/, proto/ and .github/ stay, they are shared.
   // Open with: code workspaces/agent-linux.code-workspace
-  "folders": [{ "name": "infraviz: agent-linux", "path": ".." }],
+  "folders": [{ "name": "hermes: agent-linux", "path": ".." }],
 
   "settings": {
-    "files.exclude": { "infraviz-server": true, "agent-windows": true }
+    "files.exclude": { "hermes-server": true, "agent-windows": true }
   },
 
   "tasks": {
@@ -14,13 +14,13 @@
       {
         "label": "rust: clippy",
         "type": "shell",
-        "command": "cargo clippy --locked -p infraviz-proto -p infraviz-agentkit -p infraviz-swarm -p infraviz-agent-linux --all-targets -- -D warnings",
+        "command": "cargo clippy --locked -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux --all-targets -- -D warnings",
         "problemMatcher": ["$rustc"]
       },
       {
         "label": "rust: test",
         "type": "shell",
-        "command": "cargo test --locked -p infraviz-proto -p infraviz-agentkit -p infraviz-swarm -p infraviz-agent-linux",
+        "command": "cargo test --locked -p hermes-proto -p hermes-agentkit -p hermes-swarm -p hermes-agent-linux",
         "group": { "kind": "test", "isDefault": true },
         "problemMatcher": ["$rustc"]
       },
@@ -32,10 +32,10 @@
         "problemMatcher": []
       },
       {
-        // the tag the compose file of the hub and the lab scripts expect; `iv.sh load-image infraviz-agent-linux:dev` (infraviz-lab) puts it in the VMs
+        // the tag the compose file of the hub and the lab scripts expect; `iv.sh load-image hermes-agent-linux:dev` (infraviz-lab) puts it in the VMs
         "label": "image: build (dev)",
         "type": "shell",
-        "command": "docker build -f agent-linux/Dockerfile -t infraviz-agent-linux:dev .",
+        "command": "docker build -f agent-linux/Dockerfile -t hermes-agent-linux:dev .",
         "problemMatcher": []
       }
     ]
