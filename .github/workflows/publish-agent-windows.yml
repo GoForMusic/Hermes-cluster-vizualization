@@ -56,6 +56,11 @@ jobs:
           HERMES_VERSION: "${{ steps.v.outputs.version }}"
         run: cargo build --release --locked -p hermes-agent-windows
 
+      # target/ is in .dockerignore (the other Dockerfiles compile inside Docker and never need it sent) — stage the
+      # one file the image needs outside it, so it's actually in the build context.
+      - name: 📦 Stage the binary for the Docker build
+        run: Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe
+
       - name: 🏷️ Image name (GHCR wants it lowercase)
         run: |
           $image = "ghcr.io/${{ github.repository_owner }}/hermes-agent-windows".ToLower()

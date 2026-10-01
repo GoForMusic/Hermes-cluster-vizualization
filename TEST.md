@@ -49,6 +49,7 @@ docker buildx build -f agent-linux/Dockerfile --platform linux/amd64 \
 ```powershell
 # agentul Windows: nativ, de pe o mașină Windows cu Docker (Windows containers mode) și Rust instalate — nu se mai cross-compilează de pe Linux:
 cargo build --release --locked -p hermes-agent-windows
+Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe   # target/ e în .dockerignore, calea asta nu
 docker login registry.exemplu.ro
 docker build -f agent-windows/Dockerfile `
   --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:ltsc2022 --build-arg VERSION=1.0.0 `

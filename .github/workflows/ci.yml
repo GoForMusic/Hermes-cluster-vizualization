@@ -207,6 +207,11 @@ jobs:
       - name: 🏗️ Build the release binary
         run: cargo build --release --locked -p hermes-agent-windows
 
+      # target/ is in .dockerignore (the other Dockerfiles compile inside Docker and never need it sent) — stage the
+      # one file the image needs outside it, so it's actually in the build context.
+      - name: 📦 Stage the binary for the Docker build
+        run: Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe
+
       - name: 🐳 Build the Windows agent image
         run: docker build -f agent-windows/Dockerfile -t hermes-agent-windows:ci .
 
