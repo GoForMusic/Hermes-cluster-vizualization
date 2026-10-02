@@ -1,0 +1,55 @@
+image:
+  repository: ghcr.io/goformusic/hermes-server
+  tag: ""                      # empty = the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# The key that encrypts the credentials stored in the database (kubeconfigs, agent tokens): 64 hex characters.
+secret:
+  existingSecret: ""           # name of a Secret you manage yourself, with the key below
+  existingSecretKey: HUB_SECRET_KEY
+  value: ""                    # or give the key here. Empty: the chart generates one on first install and keeps it on upgrades
+                               # (needs `lookup`, so not with `helm template`/Argo CD without cluster access: set one of the two above)
+
+# The SQLite database lives here. One replica only: SQLite is a single-writer file.
+persistence:
+  enabled: true
+  size: 2Gi
+  storageClass: ""             # empty = the cluster's default
+  accessModes: [ReadWriteOnce]
+  existingClaim: ""
+
+hub:
+  demo: false                  # HUB_DEMO: a development fixture, keep it off
+  # Optional: images in the generated agent manifests (the Settings -> Registry page of the web app replaces these)
+  agentImage: ""
+  agentImageWindows: ""
+  agentPullSecret: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  # Traefik must talk h2c to the hub (REST + SSE + gRPC on one port). Other controllers: see deploy/README.md
+  annotations:
+    traefik.ingress.kubernetes.io/service.serversscheme: h2c
+
+ingress:
+  enabled: false
+  className: traefik
+  host: hermes.example.com
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: hermes-tls     # filled by cert-manager, or by you
+
+resources:
+  requests: { cpu: 50m, memory: 32Mi }
+  limits: { memory: 256Mi }
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
