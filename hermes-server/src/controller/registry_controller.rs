@@ -56,7 +56,7 @@ pub(super) async fn registry_versions(State(st): State<Shared>, _: Admin) -> Res
 
 async fn probe(st: &Shared, config: &RegistryConfig) -> RegistryTest {
     let client = &st.registry;
-    if let Err(e) = client.check(config).await {
+    if let Err(e) = client.check(config, config.linux_repo()).await {
         return RegistryTest {
             ok: false,
             message: format!("{e}"),

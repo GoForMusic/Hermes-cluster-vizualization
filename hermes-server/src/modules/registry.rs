@@ -161,12 +161,16 @@ impl RegistryClient {
             .ok_or_else(|| anyhow!("the registry's login service sent no token"))
     }
 
-    /// Whether the registry answers and accepts these credentials.
-    pub async fn check(&self, config: &RegistryConfig) -> Result<()> {
+    /// Whether the registry answers and accepts these credentials. `repo` is the repository the token is asked for: GHCR's
+    /// challenge on `/v2/` carries a placeholder scope (`repository:user/image:pull`) that its token service answers 403 to,
+    /// even for a public registry, so the token has to be for a real repository.
+    pub async fn check(&self, config: &RegistryConfig, repo: &str) -> Result<()> {
         if !config.is_set() {
             bail!("the registry address is empty");
         }
-        let res = self.get(config, "/v2/", None).await?;
+        let res = self
+            .get(config, "/v2/", Some(&full_repo(config, repo)))
+            .await?;
         match res.status() {
             s if s.is_success() => Ok(()),
             StatusCode::UNAUTHORIZED => bail!("{}", refused(config)),
