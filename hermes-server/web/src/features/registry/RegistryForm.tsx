@@ -11,9 +11,12 @@ const Field = ({ label, hint, children }: { label: string; hint?: string; childr
   <label className="f">{label}{children}{hint ? <span className="muted" style={{ fontSize: 11.5 }}>{hint}</span> : null}</label>
 );
 
-const PRESETS: readonly { name: string; url: string; hint: string }[] = [
+// What a hub with nothing saved starts with: the official images, public on GHCR. Anyone with their own registry picks another preset.
+const DEFAULT_REGISTRY = { url: 'ghcr.io', project: 'goformusic', auth: 'none' } as const;
+
+const PRESETS: readonly { name: string; url: string; project?: string; hint: string }[] = [
   { name: 'Docker Hub', url: 'docker.io', hint: 'Project = your Docker Hub user or organization.' },
-  { name: 'GitHub (GHCR)', url: 'ghcr.io', hint: 'User = your GitHub user, password = a token with read:packages.' },
+  { name: 'GitHub (GHCR)', url: 'ghcr.io', project: DEFAULT_REGISTRY.project, hint: 'The official images are public: no login. For your own images: User = your GitHub user, password = a token with read:packages.' },
   { name: 'Gitea', url: '', hint: 'Address = your Gitea host. User + a token with read:package.' },
   { name: 'Harbor', url: '', hint: 'Address = your Harbor host. Use a robot account with pull rights only.' },
 ];
@@ -30,7 +33,8 @@ export function RegistryForm({ submitLabel, onSaved, extra }: { submitLabel: str
     let live = true;
     void client.registry.get().then((v) => {
       if (!live) return;
-      setForm({ url: v.url, project: v.project, auth: v.auth, username: v.username, linuxImage: v.linuxImage, windowsImage: v.windowsImage });
+      const fresh = !v.url.trim(); // nothing saved yet: start from the official images instead of an empty form
+      setForm({ ...(fresh ? DEFAULT_REGISTRY : { url: v.url, project: v.project, auth: v.auth }), username: v.username, linuxImage: v.linuxImage, windowsImage: v.windowsImage });
       setHasSecret(v.hasSecret);
     }).catch(() => {});
     return () => { live = false; };
@@ -53,7 +57,7 @@ export function RegistryForm({ submitLabel, onSaved, extra }: { submitLabel: str
     <form onSubmit={submit}>
       <div className="form">
         <div className="tabs" role="group" aria-label="Registry presets">
-          {PRESETS.map((p) => <button key={p.name} type="button" className={`pill${p.url && form.url === p.url ? ' on' : ''}`} onClick={() => { setHint(p.hint); if (p.url) set({ url: p.url }); }}>{p.name}</button>)}
+          {PRESETS.map((p) => <button key={p.name} type="button" className={`pill${p.url && form.url === p.url ? ' on' : ''}`} onClick={() => { setHint(p.hint); if (p.url) set({ url: p.url, ...(p.project ? { project: p.project } : {}) }); }}>{p.name}</button>)}
         </div>
         {hint ? <div className="help" style={{ margin: 0 }}>{hint}</div> : null}
         <Field label="Registry address" hint="Host and port, e.g. git.example.com or harbor.example.com:8443. Write http:// in front for a plain, unencrypted registry.">

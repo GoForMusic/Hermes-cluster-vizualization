@@ -12,7 +12,9 @@ describe('the registry step of the setup', () => {
     const { hub } = await renderWithHub(<SetupRegistry onDone={() => { done += 1; }} />);
     const user = userEvent.setup();
     expect(screen.getByText('Step 2 of 2')).toBeInTheDocument();
-    await user.type(await screen.findByPlaceholderText('git.example.com'), 'git.example.com');
+    const address = await screen.findByPlaceholderText('git.example.com');
+    await user.clear(address);
+    await user.type(address, 'git.example.com');
     await user.click(screen.getByRole('button', { name: 'Save and continue' }));
     await waitFor(() => expect(done).toBe(1));
     expect(hub.calls).toContain('registry.save:git.example.com:none:-');
@@ -20,9 +22,21 @@ describe('the registry step of the setup', () => {
     expect(done).toBe(2);
   });
 
+  it('starts from the official images on GHCR, so a first install can just continue', async () => {
+    let done = 0;
+    const { hub } = await renderWithHub(<SetupRegistry onDone={() => { done += 1; }} />);
+    expect(await screen.findByDisplayValue('ghcr.io')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('goformusic')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(done).toBe(1));
+    expect(hub.calls).toContain('registry.save:ghcr.io:none:-');
+  });
+
   it('asks for the address instead of saving nothing', async () => {
     const { hub } = await renderWithHub(<SetupRegistry onDone={() => {}} />);
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Save and continue' }));
+    const user = userEvent.setup();
+    await user.clear(await screen.findByPlaceholderText('git.example.com'));
+    await user.click(screen.getByRole('button', { name: 'Save and continue' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Type the registry address');
     expect(hub.calls.some((c) => c.startsWith('registry.save'))).toBe(false);
   });

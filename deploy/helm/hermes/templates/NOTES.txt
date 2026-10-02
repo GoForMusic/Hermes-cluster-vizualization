@@ -1,0 +1,10 @@
+Hermes {{ .Chart.AppVersion }} installed.
+{{- if .Values.ingress.enabled }}
+Open https://{{ .Values.ingress.host }} and create the admin account.
+Agents connect to the same address (gRPC over TLS).
+{{- else }}
+Not exposed: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "hermes.name" . }} 8080:{{ .Values.service.port }}
+{{- end }}
+
+The database is on the volume claim "{{ include "hermes.claimName" . }}" and the key that encrypts its credentials is in the Secret
+"{{ include "hermes.secretName" . }}"; both survive `helm uninstall`. Back the Secret up.

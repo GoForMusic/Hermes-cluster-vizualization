@@ -1,0 +1,84 @@
+# Hermes hub + Traefik (TLS, Let's Encrypt), the production layout.
+#   ./setup.sh               # creates .env: asks for DOMAIN and ACME_EMAIL, generates HUB_SECRET_KEY
+#   docker compose up -d
+name: hermes
+
+services:
+  hub:
+    image: ghcr.io/goformusic/hermes-server:${HERMES_VERSION:-1.0.1}
+    restart: unless-stopped
+    environment:
+      HUB_ADDR: ":8080"
+      HUB_WEB: /web
+      HUB_DATA: /data
+      # encrypts the credentials stored in the database (kubeconfigs, agent tokens); setup.sh generates it. Lose it and they are unreadable.
+      HUB_SECRET_KEY: ${HUB_SECRET_KEY:?run ./setup.sh to create .env}
+      HUB_DEMO: "0"
+    volumes:
+      - hermes-data:/data              # the SQLite database: sources (+ encrypted credentials), settings, alerts, heartbeats
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks: [edge]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: hermes_edge
+      traefik.http.routers.hermes.rule: Host(`${DOMAIN:?set DOMAIN in .env}`)
+      traefik.http.routers.hermes.entrypoints: websecure
+      traefik.http.routers.hermes.tls.certresolver: letsencrypt
+      traefik.http.routers.hermes.middlewares: hermes-headers
+      # the hub speaks plain HTTP/2 (h2c) on one port: REST + SSE for the browser, gRPC for the agents
+      traefik.http.services.hermes.loadbalancer.server.port: "8080"
+      traefik.http.services.hermes.loadbalancer.server.scheme: h2c
+      traefik.http.middlewares.hermes-headers.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.hermes-headers.headers.contentTypeNosniff: "true"
+      traefik.http.middlewares.hermes-headers.headers.frameDeny: "true"
+      traefik.http.middlewares.hermes-headers.headers.referrerPolicy: same-origin
+
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      # agents hold one gRPC stream open for as long as they run, and the browser one SSE stream: no read/write deadline
+      - --entrypoints.websecure.transport.respondingtimeouts.readtimeout=0
+      - --entrypoints.websecure.transport.respondingtimeouts.writetimeout=0
+      - --entrypoints.websecure.transport.respondingtimeouts.idletimeout=3600s
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?set ACME_EMAIL in .env}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --api.dashboard=false
+      - --ping=true
+      - --log.level=INFO
+      - --accesslog=false
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/letsencrypt
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [edge]
+
+networks:
+  edge:
+
+volumes:
+  hermes-data:
+  traefik-certs:

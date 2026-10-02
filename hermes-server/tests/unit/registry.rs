@@ -50,7 +50,7 @@ async fn basic_auth_registry_lists_versions_newest_first() {
     let base = serve(basic_registry()).await;
     let c = RegistryClient::new();
     let cfg = config(&base, "basic");
-    c.check(&cfg).await.unwrap();
+    c.check(&cfg, "hermes-agent-linux").await.unwrap();
     assert_eq!(
         c.tags(&cfg, "hermes-agent-linux").await.unwrap(),
         ["1.10.0", "1.2.0", "1.0.0", "latest"]
@@ -63,14 +63,14 @@ async fn wrong_password_is_reported_as_such() {
     let mut cfg = config(&base, "basic");
     cfg.secret = "nope".into();
     let e = RegistryClient::new()
-        .check(&cfg)
+        .check(&cfg, "hermes-agent-linux")
         .await
         .unwrap_err()
         .to_string();
     assert!(e.contains("refused this user and password"), "{e}");
     cfg.auth = "none".into();
     let e = RegistryClient::new()
-        .check(&cfg)
+        .check(&cfg, "hermes-agent-linux")
         .await
         .unwrap_err()
         .to_string();
@@ -148,7 +148,7 @@ async fn a_missing_repository_and_an_unreachable_registry_are_explained() {
     .await;
     let cfg = config(&base, "none");
     let c = RegistryClient::new();
-    c.check(&cfg).await.unwrap();
+    c.check(&cfg, "hermes-agent-linux").await.unwrap();
     let e = c
         .tags(&cfg, "hermes-agent-linux")
         .await
@@ -156,12 +156,16 @@ async fn a_missing_repository_and_an_unreachable_registry_are_explained() {
         .to_string();
     assert!(e.contains("acm/hermes-agent-linux is not in"), "{e}");
     let e = c
-        .check(&config("http://127.0.0.1:1", "none"))
+        .check(&config("http://127.0.0.1:1", "none"), "hermes-agent-linux")
         .await
         .unwrap_err()
         .to_string();
     assert!(e.contains("cannot connect"), "{e}");
-    assert!(c.check(&RegistryConfig::default()).await.is_err());
+    assert!(
+        c.check(&RegistryConfig::default(), "hermes-agent-linux")
+            .await
+            .is_err()
+    );
 }
 
 #[test]
@@ -196,4 +200,54 @@ fn image_names_follow_the_registry() {
         (c.base().as_str(), c.image("x").as_str()),
         ("https://registry-1.docker.io", "docker.io/acm/x")
     );
+}
+
+/// GHCR: the challenge on `/v2/` names a placeholder scope its token service refuses (403), even for public images; only a
+/// token for a real repository works, so the connection test has to ask for one.
+#[tokio::test]
+async fn the_connection_test_asks_for_a_real_repository_not_the_challenges_placeholder() {
+    async fn token(
+        axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+    ) -> axum::response::Response {
+        match q.get("scope").map(String::as_str) {
+            Some("repository:acm/hermes-agent-linux:pull") => {
+                Json(json!({"token": "T0K"})).into_response()
+            }
+            _ => Code::FORBIDDEN.into_response(),
+        }
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let realm = format!("{base}/token");
+    let registry = move |headers: HeaderMap| {
+        let realm = realm.clone();
+        async move {
+            if headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer T0K")
+            {
+                Json(json!({})).into_response()
+            } else {
+                (
+                    Code::UNAUTHORIZED,
+                    [(
+                        "www-authenticate",
+                        format!(
+                            "Bearer realm=\"{realm}\",service=\"ghcr.io\",scope=\"repository:user/image:pull\""
+                        ),
+                    )],
+                )
+                    .into_response()
+            }
+        }
+    };
+    let app = Router::new()
+        .route("/token", get(token))
+        .fallback(get(registry));
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let cfg = config(&base, "none");
+    RegistryClient::new()
+        .check(&cfg, "hermes-agent-linux")
+        .await
+        .unwrap();
 }

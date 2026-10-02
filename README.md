@@ -97,7 +97,7 @@ The first visit asks you to create the admin account (only its password hash is 
 The agent images are published to a registry your clusters can reach (GHCR works) by the pipelines below;
 the hub is told which images to put in the generated manifests with `AGENT_IMAGE` (Linux) and `AGENT_IMAGE_WINDOWS` (optional). See [TEST.md](TEST.md).
 
-Agents talk to the hub over **gRPC** on the same port as the web app. Put something in front of it that passes HTTP/2 and long-lived streams (Traefik, nginx, ...) — or skip the proxy and have the hub terminate TLS itself with `HUB_TLS_CERT`/`HUB_TLS_KEY` (both PEM files; see `hermes-server/deploy/docker-compose.yml`).
+Agents talk to the hub over **gRPC** on the same port as the web app. Put something in front of it that passes HTTP/2 and long-lived streams (Traefik, nginx, ...) — or skip the proxy and have the hub terminate TLS itself with `HUB_TLS_CERT`/`HUB_TLS_KEY` (both PEM files). Production setups, with Traefik for Docker Compose and a Helm chart: [`deploy/`](deploy/README.md).
 
 ## Versions
 

@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hermes.name" . }}
+  labels: {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # the old pod must let go of the SQLite file before the new one opens it
+  selector:
+    matchLabels: {{- include "hermes.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "hermes.selector" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: hub
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: HUB_ADDR, value: ":8080" }
+            - { name: HUB_WEB, value: /web }
+            - { name: HUB_DATA, value: /data }
+            - { name: HUB_DEMO, value: {{ ternary "1" "0" .Values.hub.demo | quote }} }
+            - name: HUB_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermes.secretName" . }}
+                  key: {{ if .Values.secret.existingSecret }}{{ .Values.secret.existingSecretKey }}{{ else }}HUB_SECRET_KEY{{ end }}
+            {{- with .Values.hub.agentImage }}
+            - { name: HUB_AGENT_IMAGE, value: {{ . | quote }} }
+            {{- end }}
+            {{- with .Values.hub.agentImageWindows }}
+            - { name: HUB_AGENT_IMAGE_WINDOWS, value: {{ . | quote }} }
+            {{- end }}
+            {{- with .Values.hub.agentPullSecret }}
+            - { name: HUB_AGENT_PULL_SECRET, value: {{ . | quote }} }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "hermes.claimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}
