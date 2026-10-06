@@ -328,6 +328,19 @@ impl IngestServiceImp {
         host: &str,
         events: Vec<Event>,
     ) -> bool {
+        // An agent whose source was removed keeps its stream until the next check of its token: what it sends in the meantime must not
+        // draw the cluster again (nothing would ever remove it). Only what creates a topology needs the check.
+        let creates = events
+            .iter()
+            .any(|e| matches!(e, Event::Snapshot { .. } | Event::Contribution(..)));
+        if creates
+            && !self
+                .db
+                .list_sources()
+                .is_ok_and(|list| list.iter().any(|s| s.id == src.id))
+        {
+            return false;
+        }
         // does this batch describe the cluster, or only this agent's machine?
         let topo_batch = events.iter().any(|e| {
             matches!(

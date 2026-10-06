@@ -802,3 +802,34 @@ fn when_every_machine_goes_quiet_the_docker_source_is_down() {
     r.svc.check(r.at(60));
     assert_eq!(r.state("s").0, "error");
 }
+
+#[test]
+fn an_agent_that_still_talks_after_its_source_was_removed_does_not_bring_the_cluster_back() {
+    let r = rig();
+    let src = r.docker_source("s", "pending");
+    r.svc
+        .handle_at(r.at(0), &src, "vm-1", "s:n:vm1", machine("vm1"));
+    assert_eq!(
+        r.store
+            .nodes()
+            .iter()
+            .filter(|n| n.kind == "cluster")
+            .count(),
+        1
+    );
+
+    // the admin removes the source: the store and the database forget it, but the agent's stream stays up until it is checked again
+    r.db.delete_source("s").unwrap();
+    r.store.remove_source("s");
+    assert!(r.store.nodes().is_empty());
+
+    r.svc
+        .handle_at(r.at(5), &src, "vm-1", "s:n:vm1", machine("vm1"));
+    r.svc
+        .handle_at(r.at(6), &src, "manager", "", vec![snapshot(&["h1"])]);
+    assert!(
+        r.store.nodes().is_empty(),
+        "nothing of a removed source is drawn again: {:?}",
+        r.store.nodes()
+    );
+}
