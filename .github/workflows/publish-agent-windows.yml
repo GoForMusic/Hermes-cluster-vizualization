@@ -53,6 +53,15 @@ jobs:
           HERMES_VERSION: "${{ steps.v.outputs.version }}"
         run: cargo build --release --locked -p hermes-agent-windows
 
+      # nanoserver has no Visual C++ runtime: a binary that imports it never starts there (exit code 0xC0000135). The runtime is linked in
+      # (.cargo/config.toml); this fails the build before an image is made if that ever stops being true.
+      - name: 🔎 The binary needs no Visual C++ runtime
+        run: |
+          $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("target/release/hermes-agent.exe"))
+          foreach ($dll in "VCRUNTIME140", "MSVCP140") {
+            if ($text -match $dll) { throw "hermes-agent.exe imports $dll.dll, which nanoserver does not have: link the runtime statically" }
+          }
+
       # target/ is in .dockerignore (the other Dockerfiles compile inside Docker and never need it sent) — stage the
       # one file the image needs outside it, so it's actually in the build context.
       - name: 📦 Stage the binary for the Docker build

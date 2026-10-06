@@ -1,3 +1,8 @@
 # The TypeScript types of the web app are generated from the Rust model (ts-rs writes them while `cargo test` runs).
 [env]
 TS_RS_EXPORT_DIR = { value = "hermes-server/web/src/generated", relative = true }
+
+# The Windows agent runs in nanoserver, which has no Visual C++ runtime: a binary that links it dynamically stops at start-up with
+# 0xC0000135 (STATUS_DLL_NOT_FOUND). Linking the runtime into the binary makes it need nothing but Windows itself.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
