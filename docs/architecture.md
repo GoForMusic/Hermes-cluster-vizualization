@@ -82,7 +82,7 @@ agents reconnect. A source the hub already knew (from SQLite) but has heard noth
 
 The first visit creates the admin (argon2id hash in SQLite, PHC string format). Browsers get an HttpOnly, SameSite=Strict session cookie (Secure behind an
 https proxy, or when the hub terminates TLS itself); only a
-SHA-256 of the token is stored. State changing requests need the header `X-Requested-With: infraviz` (CSRF), logins are rate limited. Read-only data
+SHA-256 of the token is stored. State changing requests need the header `X-Requested-With: hermes` (CSRF), logins are rate limited. Read-only data
 (wallboard) is open to anyone only while "view without login" is on; everything that changes state or shows source details needs a
 session. Agents are not users: they authenticate with their source token.
 

@@ -1,1 +1,1 @@
-Save it as agent.yaml and run: kubectl apply -f agent.yaml. The image must be pullable by the cluster; for a private registry create the pull secret in the infraviz namespace first.
+Save it as agent.yaml and run: kubectl apply -f agent.yaml. The image must be pullable by the cluster; for a private registry create the pull secret in the hermes namespace first.

@@ -49,7 +49,7 @@ docker buildx build -f agent-linux/Dockerfile --platform linux/amd64 \
 ```powershell
 # agentul Windows: nativ, de pe o mașină Windows cu Docker (Windows containers mode) și Rust instalate — nu se mai cross-compilează de pe Linux:
 cargo build --release --locked -p hermes-agent-windows
-Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe   # target/ e în .dockerignore, calea asta nu
+Copy-Item target/release/hermes-agent.exe agent-windows/agent.exe   # target/ e în .dockerignore, calea asta nu
 docker login registry.exemplu.ro
 docker build -f agent-windows/Dockerfile `
   --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:ltsc2022 --build-arg VERSION=1.0.0 `
@@ -98,8 +98,8 @@ nano agent.yaml            # lipești manifestul, Ctrl+O, Enter, Ctrl+X
 **c. Doar pentru imagini private**, creează namespace-ul și secretul de pull înainte să aplici manifestul:
 
 ```bash
-kubectl create namespace infraviz
-kubectl -n infraviz create secret docker-registry registry-cred \
+kubectl create namespace hermes
+kubectl -n hermes create secret docker-registry registry-cred \
   --docker-server=registry.exemplu.ro --docker-username=UTILIZATOR --docker-password=TOKEN-CU-read:package
 ```
 
@@ -111,14 +111,14 @@ Numele `registry-cred` trebuie să fie același cu `AGENT_PULL_SECRET` de la pas
 kubectl apply -f agent.yaml
 ```
 
-Se creează namespace-ul `infraviz`, un ServiceAccount **doar cu drept de citire**, un ClusterRole și un Deployment cu **un singur pod**, fixat pe **noduri Linux**
+Se creează namespace-ul `hermes`, un ServiceAccount **doar cu drept de citire**, un ClusterRole și un Deployment cu **un singur pod**, fixat pe **noduri Linux**
 (`kubernetes.io/os: linux`), deci nu ajunge niciodată pe un nod Windows. Ajunge un singur agent per cluster, oricâte noduri are: citește prin API-ul clusterului.
 
 **e. Verifică în cluster:**
 
 ```bash
-kubectl -n infraviz get pods                          # 1/1 Running
-kubectl -n infraviz logs deploy/infraviz-agent --tail=5
+kubectl -n hermes get pods                          # 1/1 Running
+kubectl -n hermes logs deploy/hermes-agent --tail=5
 # așteptat: "collector: connected — 3 nodes · N pods · M volumes"
 ```
 
@@ -143,15 +143,15 @@ docker login registry.exemplu.ro
 **d. Deploy:**
 
 ```bash
-docker stack deploy --with-registry-auth -c agent.yml infraviz
+docker stack deploy --with-registry-auth -c agent.yml hermes
 ```
 
 **e. Verifică:**
 
 ```bash
-docker service ls                             # infraviz_agent (și infraviz_agent-windows dacă ai pus imaginea Windows)
-docker service ps infraviz_agent              # un task pe FIECARE nod Linux, toate Running
-docker service logs infraviz_agent --tail 5
+docker service ls                             # hermes_agent (și hermes_agent-windows dacă ai pus imaginea Windows)
+docker service ps hermes_agent              # un task pe FIECARE nod Linux, toate Running
+docker service logs hermes_agent --tail 5
 ```
 
 Serviciul e **global**: câte un agent pe nod, pentru că doar un nod își poate măsura propriul consum. Fiecare raportează CPU/memoria nodului și a containerelor lui;
@@ -170,7 +170,7 @@ Un cluster poate avea noduri Linux și Windows. Fiecare nod își arată sistemu
 | Imaginea Windows | — | `hermes-agent-windows:X.Y.Z-ltsc2022` sau `-ltsc2019`, după versiunea de Windows a nodurilor |
 
 Agentul Windows a fost compilat și imaginea a fost construită și verificată structural, dar **nu a rulat încă pe un nod Windows real**: la prima instalare pe Windows verifică
-`docker service ps infraviz_agent-windows` și jurnalul lui, și spune-mi ce apare.
+`docker service ps hermes_agent-windows` și jurnalul lui, și spune-mi ce apare.
 
 ## 4. Ce vezi și unde
 
@@ -184,7 +184,7 @@ Agentul Windows a fost compilat și imaginea a fost construită și verificată 
 | **Admin → Account** | Schimbi parola. Celelalte sesiuni sunt deconectate |
 
 Nu te speria de nodurile pe care nu le-ai creat tu: pe k3s apar și pod-urile de sistem din `kube-system` (`coredns`, `traefik`, `metrics-server`,
-`svclb-traefik-*`, `local-path-provisioner`), instalate de k3s. Singurul lucru adăugat de agent e `infraviz-agent`, în namespace-ul `infraviz`.
+`svclb-traefik-*`, `local-path-provisioner`), instalate de k3s. Singurul lucru adăugat de agent e `hermes-agent`, în namespace-ul `hermes`.
 
 **Uptime history:** bara arată ce a *văzut* hub-ul, deci începe din momentul în care nodul apare prima oară. Intervalul (1h / 6h / 24h / 7d) se alege automat
 cât să acopere tot istoricul; îl poți schimba din butoanele de deasupra barei. Dacă ștergi o sursă și o adaugi din nou, nodurile primesc ID-uri noi și
@@ -200,7 +200,7 @@ Fă asta doar pe un cluster de test.
 | Un serviciu Swarm care crapă | `docker service create --detach --name flaky busybox sh -c "exit 1"` | Alertă `flaky.1 CrashLoop…`. Îl scoți cu `docker service rm flaky` |
 | Alerta se închide | repari problema | Se închide după ~15–20 s (pauza împiedică alertele care clipesc) |
 | Un nod căzut | oprești un nod | Hostul devine *Unreachable*, pod-urile lui „No data", alertă critică |
-| Un agent care tace | `kubectl -n infraviz scale deploy infraviz-agent --replicas=0` | După ~20 s sursa devine *Error* („agent silent") + alertă. Înapoi cu `--replicas=1` |
+| Un agent care tace | `kubectl -n hermes scale deploy hermes-agent --replicas=0` | După ~20 s sursa devine *Error* („agent silent") + alertă. Înapoi cu `--replicas=1` |
 | Un cluster adăugat de două ori | adaugi încă o sursă pentru același cluster | A doua primește *Duplicate* și nu desenează nimic |
 
 ## 6. Depanare
@@ -214,15 +214,15 @@ Fă asta doar pe un cluster de test.
 | Pod-ul agentului: `ImagePullBackOff` / `ErrImagePull` | Imaginea nu e în registry, registry-ul e privat sau nodul nu rezolvă numele | Verifică `AGENT_IMAGE`; pentru imagini private secretul de pull (pasul 1c) și `AGENT_PULL_SECRET`; verifică că nodul rezolvă numele registry-ului |
 | În logul agentului: `hub answered 401` | Sursa a fost ștearsă sau tokenul s-a schimbat | Adaugă sursa din nou și aplică manifestul NOU |
 | Pipeline-ul: `unauthorized` la push | Lipsesc sau sunt greșite secretele `REGISTRY_USER` / `REGISTRY_TOKEN` | Refă tokenul cu `write:package` și pune-l în secretele repo-ului |
-| Swarm: `service mode change is not allowed` | Exista un stack `infraviz` dintr-o versiune veche (replicat) | `docker stack rm infraviz`, așteaptă câteva secunde, redeploy |
-| Swarm: `network infraviz_default not found` | Redeploy prea repede după `stack rm` | Așteaptă 10 s și rulează din nou |
-| Swarm: hosturile arată „NO METRICS" | Agentul nu rulează pe fiecare nod | `docker service ps infraviz_agent` trebuie să arate câte un task pe nod |
+| Swarm: `service mode change is not allowed` | Exista un stack `hermes` dintr-o versiune veche (replicat) | `docker stack rm hermes`, așteaptă câteva secunde, redeploy |
+| Swarm: `network hermes_default not found` | Redeploy prea repede după `stack rm` | Așteaptă 10 s și rulează din nou |
+| Swarm: hosturile arată „NO METRICS" | Agentul nu rulează pe fiecare nod | `docker service ps hermes_agent` trebuie să arate câte un task pe nod |
 
 ## 7. Curățenie
 
 ```bash
 # în dashboard: Sources → Remove (de două ori, ca confirmare)
-kubectl delete namespace infraviz && kubectl delete clusterrole,clusterrolebinding infraviz-agent     # Kubernetes
-docker stack rm infraviz                                                                              # Swarm
+kubectl delete namespace hermes && kubectl delete clusterrole,clusterrolebinding hermes-agent     # Kubernetes
+docker stack rm hermes                                                                              # Swarm
 cd hermes-server/deploy && docker compose down -v      # resetare completă a hub-ului: cont, surse, alerte, istoric, setări
 ```

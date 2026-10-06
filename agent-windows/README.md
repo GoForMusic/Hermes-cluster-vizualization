@@ -30,7 +30,7 @@ Dockerfile just copies it in, on a host with Docker in Windows-container mode. B
 
 ```powershell
 cargo build --release --locked -p hermes-agent-windows
-Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe   # target/ is in .dockerignore, this path isn't
+Copy-Item target/release/hermes-agent.exe agent-windows/agent.exe   # target/ is in .dockerignore, this path isn't
 docker build -f agent-windows/Dockerfile `
   --build-arg WINDOWS_BASE=mcr.microsoft.com/windows/nanoserver:ltsc2022 --build-arg VERSION=1.0.0 `
   -t REGISTRY/hermes-agent-windows:1.0.0-ltsc2022 .

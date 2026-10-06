@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     if [ -n "$VERSION" ]; then export HERMES_VERSION="$VERSION"; fi && \
     arch="$(uname -m)" && export "CC_${arch}_unknown_linux_musl=musl-gcc" && \
     cargo build --release --locked -p hermes-agent-linux --target "${arch}-unknown-linux-musl" && \
-    install -D "target/${arch}-unknown-linux-musl/release/infraviz-agent" /out/agent
+    install -D "target/${arch}-unknown-linux-musl/release/hermes-agent" /out/agent
 
 # nothing but the binary, as an unprivileged user
 FROM scratch

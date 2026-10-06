@@ -52,7 +52,7 @@ pub fn upgrader() -> Result<hermes_agentkit::SharedUpgrader> {
     let namespace =
         std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
             .map(|n| n.trim().to_string())
-            .unwrap_or_else(|_| "infraviz".into());
+            .unwrap_or_else(|_| "hermes".into());
     let client = Client::try_from(config).context("cannot set up the Kubernetes client")?;
     Ok(std::sync::Arc::new(upgrade::K8sUpgrader::new(
         client, &namespace,
