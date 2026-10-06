@@ -128,7 +128,7 @@ Runs on GitHub-hosted runners (`ubuntu-latest`, free for a public repo). Images 
 | `publish-agent-windows.yml` | tag `agent-windows-X.Y.Z` | test, build natively on a Windows runner, push `hermes-agent-windows:X.Y.Z-ltsc2022` and `-ltsc2019` |
 
 ```bash
-git tag agent-linux-1.0.1 && git push origin agent-linux-1.0.1     # publishes only the Linux agent, on every remote that has the tag
+git tag agent-linux-1.0.2 && git push origin agent-linux-1.0.2     # publishes only the Linux agent, on every remote that has the tag
 ```
 
 The agents are deployed separately from the hub, so a change in `proto/` must stay compatible with agents already installed

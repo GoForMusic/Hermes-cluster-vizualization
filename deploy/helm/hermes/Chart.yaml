@@ -2,6 +2,6 @@ apiVersion: v2
 name: hermes
 description: Hermes hub, the messenger of the cluster. One pod, SQLite on a volume, web app + gRPC for the agents on one port.
 type: application
-version: 1.0.1
-appVersion: "1.0.1"
+version: 1.0.3
+appVersion: "1.0.3"
 home: https://github.com/GoForMusic/Hermes-cluster-vizualization
