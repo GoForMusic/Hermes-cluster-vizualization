@@ -561,3 +561,9 @@ dialog h2 { margin: 0 0 14px; font-size: 18px; }
 .host-grip { cursor: nwse-resize; }
 .host-grip path { fill: none; stroke: var(--text-dim, var(--line)); stroke-width: 1.6; stroke-linecap: round; opacity: .55; }
 .host-grip:hover path { stroke: var(--accent); opacity: 1; }
+
+/* dragging a cluster by its title band */
+.cl-band.grab { cursor: grab; }
+.cl-dragging, .cl-drag { opacity: .4; }
+.cl-drop .cluster-box { stroke: var(--accent); stroke-width: 2; }
+.cl-dropbar { fill: var(--accent); pointer-events: none; }

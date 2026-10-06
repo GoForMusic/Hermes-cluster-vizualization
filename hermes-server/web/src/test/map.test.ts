@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeLinks, gridRef } from '../domain/map/links';
 import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutToFit, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
 import { Router } from '../domain/map/router';
+import { dropSide, moveTo, orderClusters } from '../domain/map/order';
 import { reduce } from '../domain/reducer';
 import { NOW, wireEdge, wireNode, world } from './fixtures';
 import { parseEdge } from '../domain/model';
@@ -293,5 +294,31 @@ describe('arranging the clusters for the screen', () => {
   it('is the plain layout when the size of the screen is not known', () => {
     expect(layoutToFit(six, new Map(), null)).toEqual(layoutTopology(six));
     expect(layoutToFit(six, new Map(), { w: 0, h: 0 })).toEqual(layoutTopology(six));
+  });
+});
+
+describe('the order of the clusters', () => {
+  const items = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+
+  it('is the order of the sources until a person gives one, and a new source comes last', () => {
+    expect(orderClusters(items, []).map((c) => c.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(orderClusters(items, ['c', 'a']).map((c) => c.id)).toEqual(['c', 'a', 'b', 'd']);
+    expect(orderClusters(items, ['gone', 'd']).map((c) => c.id)).toEqual(['d', 'a', 'b', 'c']); // a source that was removed is not missed
+  });
+
+  it('puts a dragged cluster just before or just after the one it was dropped on', () => {
+    expect(moveTo(['a', 'b', 'c', 'd'], 'd', 'b')).toEqual(['a', 'd', 'b', 'c']);
+    expect(moveTo(['a', 'b', 'c', 'd'], 'a', 'c')).toEqual(['b', 'a', 'c', 'd']);
+    expect(moveTo(['a', 'b', 'c', 'd'], 'a', 'c', true)).toEqual(['b', 'c', 'a', 'd']);
+    expect(moveTo(['a', 'b', 'c', 'd'], 'a', 'a')).toEqual(['a', 'b', 'c', 'd']);
+    expect(moveTo(['a', 'b'], 'x', 'a')).toEqual(['a', 'b']);
+  });
+
+  it('says which side of a cluster a drop is on from where the pointer is in it', () => {
+    const box = { x: 100, y: 100, w: 400, h: 200 };
+    expect(dropSide(box, 450, 200)).toBe('r');
+    expect(dropSide(box, 150, 200)).toBe('l');
+    expect(dropSide(box, 300, 290)).toBe('b');
+    expect(dropSide(box, 300, 110)).toBe('t');
   });
 });

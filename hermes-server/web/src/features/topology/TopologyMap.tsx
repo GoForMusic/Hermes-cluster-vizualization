@@ -2,7 +2,7 @@
 // state), a coordinate grid and traffic links. The layout and the link routes depend on the SHAPE of the topology only, so they are computed
 // again when it changes and not on every sample; the numbers on it come straight from the state. Orchestration only: the grid, the individual
 // box/node/link symbols each live in their own file (`Grid`, `MapHost`, `MapNode`, `MapLink`).
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { CL_HEAD, CL_PAD, MAX_NETWORKS, layoutToFit, moreId, shapeSignature, topologyShape, type ClusterBox, type Layout } from '../../domain/map/layout';
 import { computeLinks } from '../../domain/map/links';
 import { networkTags } from '../../domain/map/networks';
@@ -14,6 +14,8 @@ import { IconG } from '../../ui/icons';
 import { useWholeState } from '../../state/context';
 import { usePanZoom, type Inset } from './usePanZoom';
 import { useHostCols } from './useHostCols';
+import { useClusterOrder } from './useClusterOrder';
+import { dropSide, orderClusters } from '../../domain/map/order';
 import { Grid } from './Grid';
 import { MapHost, HostLabel, HostGrip } from './MapHost';
 import { MapNode, MoreNetworks } from './MapNode';
@@ -36,7 +38,8 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
   const state = useWholeState();
   const uid = useId();
 
-  const shape = topologyShape(state, visible);
+  const clusterOrder = useClusterOrder();
+  const shape = orderClusters(topologyShape(state, visible), clusterOrder.order); // in the order a person gave them by dragging, else the sources'
   const sig = shapeSignature(shape);
   // the signature says when the shape changed: the layout is not computed again for a new sample
   const hostCols = useHostCols();
@@ -77,6 +80,39 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
   const clearSelection = () => { if (interactive && selectedId && !zoom.wasDragged()) onSelect?.(null); };
 
   const { view } = zoom;
+
+  // Dragging a cluster by its title band onto another puts it where that one is. The map stays where it is while it happens.
+  const [drag, setDrag] = useState<{ id: string; over: string | null; side: 'l' | 'r' | 't' | 'b' } | null>(null);
+  const grab = (id: string) => (e: ReactPointerEvent<SVGElement>) => {
+    if (!interactive || e.button !== 0) return;
+    e.stopPropagation(); // not a pan of the map
+    zoom.hold();
+    const svg = zoom.svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect(), v = view, x0 = e.clientX, y0 = e.clientY;
+    let moved = false, over: string | null = null, side: 'l' | 'r' | 't' | 'b' = 'l';
+    const at = (ev: PointerEvent) => {
+      const px = (ev.clientX - rect.left - v.x) / v.k, py = (ev.clientY - rect.top - v.y) / v.k;
+      const inside = layout.clusters.find((c) => px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h);
+      return inside && inside.id !== id ? { id: inside.id, side: dropSide(inside, px, py) } : null;
+    };
+    const move = (ev: PointerEvent) => {
+      if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return; // a click, not a drag
+      moved = true;
+      const hit = at(ev);
+      over = hit?.id ?? null;
+      side = hit?.side ?? 'l';
+      setDrag({ id, over, side });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (moved && over) clusterOrder.place(id, over, layout.clusters.map((c) => c.id), side === 'r' || side === 'b');
+      setDrag(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
   return (
     <svg
       ref={zoom.svgRef}
@@ -91,9 +127,10 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
         <Grid w={layout.w} h={layout.h} />
         <g>
           {layout.clusters.map((c) => (
-            <ClusterBoxView key={c.id} box={c} layout={layout} state={state} selectedId={selectedId} interactive={interactive} select={select} />
+            <ClusterBoxView key={c.id} box={c} layout={layout} state={state} selectedId={selectedId} interactive={interactive} select={select} onGrab={interactive ? grab(c.id) : undefined} onReset={interactive ? clusterOrder.clear : undefined} mark={drag?.id === c.id ? 'drag' : drag?.over === c.id ? 'drop' : undefined} />
           ))}
         </g>
+        {drag?.over ? <DropBar box={layout.clusters.find((c) => c.id === drag.over)} side={drag.side} /> : null}
         <g>
           {[...tags.colors.keys(), null].map((net) => (
             // the lines of one network share their trunk and bus, so they are made see-through together: drawn one by one, the parts they
@@ -139,14 +176,25 @@ interface BoxProps {
   select: (id: string) => (e: MouseEvent) => void;
 }
 
-function ClusterBoxView({ box, state, selectedId, select }: BoxProps & { box: ClusterBox }) {
+interface ClusterDrag {
+  /** Pointer down on the title band: starts moving the cluster. */
+  onGrab?: (e: ReactPointerEvent<SVGElement>) => void;
+  /** Double click on the band: back to the automatic order. */
+  onReset?: () => void;
+  /** `drag`: this one is being moved; `drop`: it is where the one being moved would go. */
+  mark?: 'drag' | 'drop';
+}
+
+function ClusterBoxView({ box, state, selectedId, select, onGrab, onReset, mark }: BoxProps & ClusterDrag & { box: ClusterBox }) {
   const c = state.nodes.get(box.id);
   if (!c) return null;
   const prov = PROVIDERS[c.provider];
   return (
-    <g>
+    <g className={mark ? `cl-${mark}` : undefined}>
       <rect className={`cluster-box st-${c.status}`} x={box.x} y={box.y} width={box.w} height={box.h} />
-      <rect className="cl-band" x={box.x} y={box.y} width={box.w} height={CL_HEAD - 6} />
+      <rect className={`cl-band${onGrab ? ' grab' : ''}`} x={box.x} y={box.y} width={box.w} height={CL_HEAD - 6} onPointerDown={onGrab} onDoubleClick={onReset ? (e) => { e.stopPropagation(); onReset(); } : undefined}>
+        {onGrab ? <title>Drag onto another cluster to move it there. Double click: automatic order.</title> : null}
+      </rect>
       <text className={`cl-sum st-${c.status}`} x={box.x + box.w - CL_PAD} y={box.y + 32} textAnchor="end">{clusterStat(state, c)}</text>
       <g className="cl-tile">
         <title>{prov.help}</title>
@@ -161,4 +209,12 @@ function ClusterBoxView({ box, state, selectedId, select }: BoxProps & { box: Cl
       })}
     </g>
   );
+}
+
+/** Where a dragged cluster would land: a bar along the side of the one it is over. */
+function DropBar({ box, side }: { box: ClusterBox | undefined; side: 'l' | 'r' | 't' | 'b' }) {
+  if (!box) return null;
+  const T = 8;
+  const r = side === 'l' ? { x: box.x - T, y: box.y, w: T, h: box.h } : side === 'r' ? { x: box.x + box.w, y: box.y, w: T, h: box.h } : side === 't' ? { x: box.x, y: box.y - T, w: box.w, h: T } : { x: box.x, y: box.y + box.h, w: box.w, h: T };
+  return <rect className="cl-dropbar" x={r.x} y={r.y} width={r.w} height={r.h} />;
 }
