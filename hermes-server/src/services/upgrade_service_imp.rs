@@ -45,7 +45,7 @@ pub trait IUpgradeService: Send + Sync {
     fn report(&self, source_id: &str, agent: &str, status: &UpgradeStatus);
     /// How the last upgrade of the source is going, judged by what its agents run now.
     fn view(&self, source_id: &str, agents: &[AgentInfo]) -> Option<UpgradeView>;
-    /// The source is gone.
+    /// The source is gone: its agents are told so and their streams end now, not at the next check of their token.
     fn forget(&self, source_id: &str);
 }
 
@@ -230,7 +230,17 @@ impl IUpgradeService for UpgradeServiceImp {
     fn forget(&self, source_id: &str) {
         let mut state = self.lock();
         state.asked.remove(source_id);
-        state.sessions.remove(source_id);
+        for session in state
+            .sessions
+            .remove(source_id)
+            .into_iter()
+            .flatten()
+            .map(|(_, s)| s)
+        {
+            let _ = session
+                .to
+                .try_send(Err(Status::unauthenticated("the source was removed")));
+        }
     }
 }
 

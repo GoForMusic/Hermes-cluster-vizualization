@@ -164,3 +164,17 @@ fn a_failure_reported_by_the_agent_is_shown_with_its_reason_and_a_new_request_st
     svc.forget("s1");
     assert_eq!(svc.view("s1", &[]), None);
 }
+
+#[test]
+fn removing_a_source_tells_its_agents_at_once_and_leaves_the_others_alone() {
+    let svc = UpgradeServiceImp::new();
+    let (_, mut gone) = attach(&svc, "s1", "a", &[]);
+    let (_, mut other) = attach(&svc, "s2", "b", &[]);
+    svc.forget("s1");
+    let told = gone.try_recv().expect("the agent is told");
+    assert_eq!(told.unwrap_err().code(), tonic::Code::Unauthenticated);
+    assert!(
+        other.try_recv().is_err(),
+        "another source's agent hears nothing"
+    );
+}
