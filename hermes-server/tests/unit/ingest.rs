@@ -38,6 +38,20 @@ impl Rig {
         s
     }
 
+    /// A source of Docker machines, which is not in a swarm.
+    fn docker_source(&self, id: &str, state: &str) -> Source {
+        let s = Source {
+            id: id.into(),
+            name: format!("name-{id}"),
+            kind: "Docker (agent)".into(),
+            state: state.into(),
+            secret: format!("tok-{id}"),
+            ..Default::default()
+        };
+        self.db.insert_source(&s).unwrap();
+        s
+    }
+
     fn state(&self, id: &str) -> (String, String) {
         let s = self
             .db
@@ -403,7 +417,7 @@ fn a_worker_adds_its_own_volumes_to_the_topology_the_manager_describes() {
         &src,
         "worker-a",
         "h-w1",
-        vec![Event::Contribution(vec![volume.clone()])],
+        vec![Event::Contribution(vec![volume.clone()], vec![])],
     );
     assert!(r.store.nodes().is_empty());
     r.svc.handle_at(
@@ -428,7 +442,7 @@ fn a_worker_adds_its_own_volumes_to_the_topology_the_manager_describes() {
         &src,
         "worker-b",
         "h-w1",
-        vec![Event::Contribution(vec![volume])],
+        vec![Event::Contribution(vec![volume], vec![])],
     );
     assert_eq!(r.store.nodes().len(), 3);
     assert_eq!(r.state("s").0, "connected");
@@ -446,7 +460,7 @@ fn a_contribution_does_not_make_its_agent_the_one_that_describes_the_cluster() {
             &src,
             "worker",
             "h-w1",
-            vec![Event::Contribution(vec![])],
+            vec![Event::Contribution(vec![], vec![])],
         );
     }
     r.svc.check(r.at(30));
@@ -684,4 +698,107 @@ fn durations_read_like_the_ones_of_the_go_hub() {
         ),
         ("25s", "1m5s", "2m0s", "2h0m0s")
     );
+}
+
+fn machine(id: &str) -> Vec<Event> {
+    vec![
+        Event::Report {
+            state: "connected".into(),
+            info: format!("{id} · 3 containers"),
+        },
+        Event::Contribution(vec![node(&format!("s:n:{id}"), "host", Some("s"))], vec![]),
+    ]
+}
+
+#[test]
+fn a_machine_that_reports_itself_is_not_a_source_nobody_describes() {
+    let r = rig();
+    let src = r.docker_source("s", "pending");
+    r.svc
+        .handle_at(r.at(0), &src, "vm-1", "s:n:vm1", machine("vm1"));
+    for t in [10, 20, 30, 40] {
+        r.svc.handle_at(r.at(t), &src, "vm-1", "s:n:vm1", vec![]);
+    }
+    r.svc.check(r.at(40));
+    assert_eq!(
+        r.state("s").0,
+        "connected",
+        "no snapshot ever comes, and none is needed"
+    );
+    let nodes = r.store.nodes();
+    assert_eq!(nodes.iter().filter(|n| n.kind == "host").count(), 1);
+    assert!(nodes.iter().all(|n| !n.stale));
+}
+
+#[test]
+fn a_docker_source_is_one_machine_and_turns_another_one_away_while_the_first_is_around() {
+    let r = rig();
+    let src = r.docker_source("s", "pending");
+    let info = |v| HelloInfo {
+        version: v,
+        collector: "docker",
+        protocol: 1,
+    };
+    r.svc
+        .hello_at(r.at(0), &src, "agent-a", "s:n:vm1", info("1.0.0"));
+    assert!(r.svc.admit_at(r.at(1), &src, "agent-a", "s:n:vm1").is_ok());
+    // the same machine with a new agent (a restart gives it a new id) is the same machine
+    assert!(r.svc.admit_at(r.at(2), &src, "agent-a2", "s:n:vm1").is_ok());
+    let why = r
+        .svc
+        .admit_at(r.at(2), &src, "agent-b", "s:n:vm2")
+        .unwrap_err();
+    assert!(why.contains("vm1") && why.contains("add a source"), "{why}");
+    // it was replaced: nothing from the first for longer than that
+    assert!(
+        r.svc
+            .admit_at(r.at(400), &src, "agent-b", "s:n:vm2")
+            .is_ok()
+    );
+}
+
+#[test]
+fn other_sources_take_any_agent_that_has_the_token() {
+    let r = rig();
+    let src = r.source("s", "pending"); // a swarm: one agent on every node
+    let info = |v| HelloInfo {
+        version: v,
+        collector: "swarm",
+        protocol: 1,
+    };
+    r.svc
+        .hello_at(r.at(0), &src, "agent-a", "s:n:node1", info("1.0.0"));
+    assert!(
+        r.svc
+            .admit_at(r.at(1), &src, "agent-b", "s:n:node2")
+            .is_ok()
+    );
+}
+
+#[test]
+fn a_machine_that_takes_the_place_of_another_leaves_nothing_of_it_on_the_map() {
+    let r = rig();
+    let src = r.docker_source("s", "pending");
+    r.svc
+        .handle_at(r.at(0), &src, "vm-1", "s:n:vm1", machine("vm1"));
+    r.svc
+        .handle_at(r.at(400), &src, "vm-2", "s:n:vm2", machine("vm2"));
+    let hosts: Vec<String> = r
+        .store
+        .nodes()
+        .into_iter()
+        .filter(|n| n.kind == "host")
+        .map(|n| n.id)
+        .collect();
+    assert_eq!(hosts, ["s:n:vm2"]);
+}
+
+#[test]
+fn when_every_machine_goes_quiet_the_docker_source_is_down() {
+    let r = rig();
+    let src = r.docker_source("s", "pending");
+    r.svc
+        .handle_at(r.at(0), &src, "vm-1", "s:n:vm1", machine("vm1"));
+    r.svc.check(r.at(60));
+    assert_eq!(r.state("s").0, "error");
 }

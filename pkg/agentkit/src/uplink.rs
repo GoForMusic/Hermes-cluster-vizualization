@@ -254,8 +254,8 @@ impl ISink for Uplink {
         self.state().alive(ids);
     }
 
-    fn contribute(&self, nodes: Vec<Node>) {
-        self.state().contribute(nodes);
+    fn contribute_with_edges(&self, nodes: Vec<Node>, edges: Vec<Edge>) {
+        self.state().contribute_with_edges(nodes, edges);
     }
 
     fn flows(&self, flows: Vec<Flow>) {

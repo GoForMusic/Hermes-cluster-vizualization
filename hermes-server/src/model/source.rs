@@ -29,6 +29,7 @@ fn is_false(b: &bool) -> bool {
 
 pub const TYPE_KUBERNETES_AGENT: &str = "Kubernetes (agent)";
 pub const TYPE_SWARM_AGENT: &str = "Docker Swarm (agent)";
+pub const TYPE_DOCKER_AGENT: &str = "Docker (agent)";
 
 impl Source {
     /// "(agent)" sources are push: a small agent inside the environment reports to the hub.
@@ -41,6 +42,8 @@ impl Source {
         let t = self.kind.to_lowercase();
         if t.contains("swarm") {
             "swarm"
+        } else if t.contains("docker") {
+            "docker"
         } else if t.contains("nomad") {
             "nomad"
         } else {

@@ -16,6 +16,9 @@ use crate::model::{Edge, Meta, Node, Source};
 /// Events a slow browser may fall behind by before it is dropped; its `EventSource` reconnects and gets a fresh snapshot.
 const BACKLOG: usize = 64;
 
+/// What one host contributed: nodes, and the links between them.
+type Contributed = (Vec<Node>, Vec<Edge>);
+
 struct Topo {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -23,9 +26,15 @@ struct Topo {
     /// What individual agents contributed on top of the topology (the volumes of their own machine), by host. A new topology from the
     /// agent that describes the cluster leaves them alone.
     extra: BTreeMap<String, Vec<Node>>,
+    /// The links that came with those nodes, by host: replaced together with them.
+    extra_edges: BTreeMap<String, Vec<Edge>>,
 }
 
 impl Topo {
+    fn all_edges(&self) -> impl Iterator<Item = &Edge> {
+        self.edges.iter().chain(self.extra_edges.values().flatten())
+    }
+
     fn all_nodes(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().chain(self.extra.values().flatten())
     }
@@ -50,9 +59,9 @@ struct Inner {
     topos: HashMap<String, Topo>,
     /// node / edge id -> (source, position in its topology). A later source wins when two of them use the same id.
     nodes: HashMap<String, (String, Slot)>,
-    edges: HashMap<String, (String, usize)>,
-    /// Contributions that came before the topology they belong to: source -> host -> nodes.
-    pending: HashMap<String, BTreeMap<String, Vec<Node>>>,
+    edges: HashMap<String, (String, Slot)>,
+    /// Contributions that came before the topology they belong to: source -> host -> nodes and links.
+    pending: HashMap<String, BTreeMap<String, Contributed>>,
 }
 
 impl Inner {
@@ -72,7 +81,14 @@ impl Inner {
                 }
             }
             for (i, e) in topo.edges.iter().enumerate() {
-                self.edges.insert(e.id.clone(), (src.clone(), i));
+                self.edges
+                    .insert(e.id.clone(), (src.clone(), Slot::Base(i)));
+            }
+            for (host, list) in &topo.extra_edges {
+                for (i, e) in list.iter().enumerate() {
+                    self.edges
+                        .insert(e.id.clone(), (src.clone(), Slot::Extra(host.clone(), i)));
+                }
             }
         }
     }
@@ -83,6 +99,15 @@ impl Inner {
         match slot {
             Slot::Base(i) => topo.nodes.get_mut(i),
             Slot::Extra(host, i) => topo.extra.get_mut(&host)?.get_mut(i),
+        }
+    }
+
+    fn edge_mut(&mut self, id: &str) -> Option<&mut Edge> {
+        let (src, slot) = self.edges.get(id)?.clone();
+        let topo = self.topos.get_mut(&src)?;
+        match slot {
+            Slot::Base(i) => topo.edges.get_mut(i),
+            Slot::Extra(host, i) => topo.extra_edges.get_mut(&host)?.get_mut(i),
         }
     }
 
@@ -97,7 +122,7 @@ impl Inner {
         let snapshot = Snapshot {
             r#type: "snapshot",
             nodes: topos().flat_map(Topo::all_nodes).collect(),
-            edges: topos().flat_map(|t| &t.edges).collect(),
+            edges: topos().flat_map(Topo::all_edges).collect(),
         };
         serde_json::to_string(&snapshot).unwrap_or_default()
     }
@@ -114,7 +139,19 @@ pub trait IStore: Send + Sync {
     fn set_topology(&self, src: &str, nodes: Vec<Node>, edges: Vec<Edge>);
     /// What one host contributes to a source's topology, for example the volumes only its own agent can measure. It replaces what the same
     /// host contributed before, and survives a new topology of the source. Before the source has a topology it waits for one.
-    fn set_contribution(&self, src: &str, host: &str, nodes: Vec<Node>);
+    fn set_contribution(&self, src: &str, host: &str, nodes: Vec<Node>) {
+        self.set_contribution_with_edges(src, host, nodes, Vec::new());
+    }
+    /// The same, with the links between the nodes (a Docker network and the containers on it). Both are replaced together.
+    fn set_contribution_with_edges(
+        &self,
+        src: &str,
+        host: &str,
+        nodes: Vec<Node>,
+        edges: Vec<Edge>,
+    );
+    /// Drops what every other host contributed to the source: for a source that is one machine, which a new machine replaces.
+    fn keep_only_contribution(&self, src: &str, host: &str);
     /// Marks everything a source reported as out of date (or current again). While a source cannot be reached the hub still holds its
     /// last state, and showing that as if it were live would hide the outage.
     fn set_stale(&self, src: &str, stale: bool);
@@ -201,9 +238,14 @@ impl IStore for StoreImp {
 
     fn set_topology(&self, src: &str, nodes: Vec<Node>, edges: Vec<Edge>) {
         let mut g = self.write();
-        let mut extra = g.topos.remove(src).map(|t| t.extra).unwrap_or_default();
-        for (host, list) in g.pending.remove(src).unwrap_or_default() {
-            extra.insert(host, list);
+        let (mut extra, mut extra_edges) = g
+            .topos
+            .remove(src)
+            .map(|t| (t.extra, t.extra_edges))
+            .unwrap_or_default();
+        for (host, (list, links)) in g.pending.remove(src).unwrap_or_default() {
+            extra.insert(host.clone(), list);
+            extra_edges.insert(host, links);
         }
         if !g.order.iter().any(|o| o == src) {
             g.order.push(src.to_string());
@@ -215,25 +257,48 @@ impl IStore for StoreImp {
                 edges,
                 stale: false,
                 extra,
+                extra_edges,
             },
         );
         g.reindex();
         self.send(g.snapshot_json());
     }
 
-    fn set_contribution(&self, src: &str, host: &str, mut nodes: Vec<Node>) {
+    fn set_contribution_with_edges(
+        &self,
+        src: &str,
+        host: &str,
+        mut nodes: Vec<Node>,
+        edges: Vec<Edge>,
+    ) {
         let mut g = self.write();
         let Some(stale) = g.topos.get(src).map(|t| t.stale) else {
             g.pending
                 .entry(src.to_string())
                 .or_default()
-                .insert(host.to_string(), nodes);
+                .insert(host.to_string(), (nodes, edges));
             return;
         };
         nodes.iter_mut().for_each(|n| n.stale = stale);
         if let Some(topo) = g.topos.get_mut(src) {
             topo.extra.insert(host.to_string(), nodes);
+            topo.extra_edges.insert(host.to_string(), edges);
         }
+        g.reindex();
+        self.send(g.snapshot_json());
+    }
+
+    fn keep_only_contribution(&self, src: &str, host: &str) {
+        let mut g = self.write();
+        let Some(topo) = g.topos.get_mut(src) else {
+            return;
+        };
+        let others = topo.extra.len() - usize::from(topo.extra.contains_key(host));
+        if others == 0 {
+            return;
+        }
+        topo.extra.retain(|h, _| h == host);
+        topo.extra_edges.retain(|h, _| h == host);
         g.reindex();
         self.send(g.snapshot_json());
     }
@@ -279,6 +344,7 @@ impl IStore for StoreImp {
                 edges: vec![],
                 stale: true,
                 extra: BTreeMap::new(),
+                extra_edges: BTreeMap::new(),
             },
         );
         g.reindex();
@@ -351,10 +417,7 @@ impl IStore for StoreImp {
             }
         }
         for (id, mbps) in edges {
-            let Some((src, i)) = g.edges.get(id).cloned() else {
-                continue;
-            };
-            if let Some(edge) = g.topos.get_mut(&src).and_then(|t| t.edges.get_mut(i)) {
+            if let Some(edge) = g.edge_mut(id) {
                 edge.mbps = *mbps;
             }
         }
@@ -373,7 +436,7 @@ impl IStore for StoreImp {
         let g = self.read();
         g.order
             .iter()
-            .flat_map(|s| g.topos[s].edges.iter().cloned())
+            .flat_map(|s| g.topos[s].all_edges().cloned())
             .collect()
     }
 
@@ -389,7 +452,7 @@ impl IStore for StoreImp {
         self.read()
             .topos
             .get(src)
-            .map(|t| t.edges.clone())
+            .map(|t| t.all_edges().cloned().collect())
             .unwrap_or_default()
     }
 }

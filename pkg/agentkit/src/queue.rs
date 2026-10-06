@@ -116,8 +116,8 @@ impl State {
         });
     }
 
-    pub(crate) fn contribute(&mut self, nodes: Vec<Node>) {
-        let contribution = Contribution { nodes };
+    pub(crate) fn contribute_with_edges(&mut self, nodes: Vec<Node>, edges: Vec<Edge>) {
+        let contribution = Contribution { nodes, edges };
         self.contribution = Some(contribution.clone());
         self.push_latest(event(event::Kind::Contribution(contribution)), |k| {
             matches!(k, event::Kind::Contribution(_))

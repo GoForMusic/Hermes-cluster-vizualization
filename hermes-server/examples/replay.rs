@@ -37,6 +37,7 @@ fn node(v: &Value) -> Node {
     let provider = match text(v, "provider") {
         "kubernetes" => Provider::Kubernetes,
         "swarm" => Provider::Swarm,
+        "docker" => Provider::Docker,
         "nomad" => Provider::Nomad,
         "storage" => Provider::Storage,
         _ => Provider::Unspecified,

@@ -7,6 +7,7 @@ The [Infra Viz](../../README.md) agent for Linux: one static Rust binary that re
 | `node` | one per node (a DaemonSet) | that this node is alive; with `CRI_SOCKET`, which pods run on it | works |
 | `kubernetes` (default) | as one pod in a cluster | the whole cluster through the API: nodes, pods, volume claims, CPU and memory (metrics-server), volume usage and pod traffic (kubelet). Tested against a fake API server, **not yet against a real cluster** | works |
 | `swarm` | as a global service, one per node | its own node (CPU, memory, the containers running on it); on a manager also the swarm topology (nodes, services, tasks). Tested against a fake Docker engine, **not yet against a real swarm** | works |
+| `docker` | one per Docker machine that is **not** in a swarm (a compose file; each machine is its own source, and a second machine with the same token is refused) | its own machine (CPU, memory) and its containers, grouped by compose project, plus the Docker networks you made. Tested against a fake Docker engine, **not yet against real machines** | works |
 
 It only makes outbound connections to the hub. You normally do not configure it by hand: the hub generates the
 install manifest (Admin → Sources → Add source) with the settings filled in.
@@ -17,11 +18,12 @@ install manifest (Admin → Sources → Add source) with the settings filled in.
 |---|---|
 | `HUB_URL` | where the hub is reachable from here, e.g. `https://hub.example.com` (`http://` = no TLS) |
 | `SOURCE_ID`, `SOURCE_NAME`, `TOKEN` | issued by the hub for this source |
-| `COLLECTOR` | `kubernetes` (default), `swarm` or `node` |
+| `COLLECTOR` | `kubernetes` (default), `swarm`, `docker` or `node` |
 | `AGENT_ID` | this instance; defaults to the host name |
 | `AGENT_HOST` | the host node this agent runs on; the manifest sets it |
 | `CRI_SOCKET` | node only: the container runtime socket |
-| `DOCKER_SOCKET` | swarm only: the Docker engine's socket, default `/var/run/docker.sock` |
+| `NODE_LOCATION` | docker only: where this machine is (a rack, a site, a region), shown on the map |
+| `DOCKER_SOCKET` | swarm and docker: the Docker engine's socket, default `/var/run/docker.sock` |
 | `HUB_CA_FILE` | optional: PEM file with the CA that signed the hub's certificate (a private CA) |
 | `RUST_LOG` | log level, default `info` |
 

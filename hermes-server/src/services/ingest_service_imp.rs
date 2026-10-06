@@ -21,6 +21,8 @@ const SILENT_AFTER: Duration = Duration::from_secs(20);
 const NO_AGENT_AFTER: Duration = Duration::from_secs(30);
 /// An agent that has not been heard of for this long is gone for good (its pod or container was replaced).
 const FORGET_AFTER: Duration = Duration::from_secs(3600);
+/// A Docker source is one machine. Another machine may take its place once the first has said nothing for this long: it was replaced.
+const REPLACED_AFTER: Duration = Duration::from_secs(300);
 
 /// One thing an agent reports.
 #[derive(Debug, Clone, PartialEq)]
@@ -51,7 +53,7 @@ pub enum Event {
     /// The workload nodes running on the agent's own host.
     Alive(Vec<String>),
     /// Nodes only this agent can see (the volumes of its own machine), added to the topology of the source.
-    Contribution(Vec<Node>),
+    Contribution(Vec<Node>, Vec<Edge>),
     /// Who talked to whom on the agent's host (from its connection tracking).
     Flows(Vec<pb::Flow>),
 }
@@ -92,9 +94,10 @@ impl Event {
                 info: r.info,
             },
             Kind::Alive(a) => Event::Alive(a.ids),
-            Kind::Contribution(c) => {
-                Event::Contribution(c.nodes.into_iter().map(Node::from).collect())
-            }
+            Kind::Contribution(c) => Event::Contribution(
+                c.nodes.into_iter().map(Node::from).collect(),
+                c.edges.into_iter().map(Edge::from).collect(),
+            ),
             Kind::Flows(f) => Event::Flows(f.flows),
         })
     }
@@ -184,6 +187,9 @@ pub trait IIngestService: Send + Sync {
     fn authenticate(&self, token: &str) -> Option<Source>;
     /// An agent opened its stream and said who it is. It counts as heard from, and what it said about itself is kept for the admin.
     fn hello(&self, src: &Source, agent: &str, host: &str, info: HelloInfo<'_>);
+    /// May this agent report to the source? A Docker source is one machine: an agent of another machine is turned away while the first
+    /// one is still around (the reason is for the agent's log). Every other kind of source takes any agent that has its token.
+    fn admit(&self, src: &Source, agent: &str, host: &str) -> Result<(), String>;
     /// The agents of a source, by id, with what each of them said about itself.
     fn agents(&self, source_id: &str) -> Vec<AgentInfo>;
     /// Applies one batch from an agent and says whether the agent must send its snapshot again (the hub does not have it).
@@ -266,6 +272,31 @@ impl IngestServiceImp {
         // A new or upgraded agent should show up in the admin without a manual refresh.
         if changed {
             self.store.publish(&json!({"type": "sources"}));
+        }
+    }
+
+    fn admit_at(&self, now: Instant, src: &Source, agent: &str, host: &str) -> Result<(), String> {
+        if src.provider() != "docker" || host.is_empty() {
+            return Ok(());
+        }
+        let guard = self.lock();
+        let other = guard
+            .agents
+            .get(&src.id)
+            .into_iter()
+            .flatten()
+            .find(|(id, a)| {
+                id.as_str() != agent
+                    && !a.host.is_empty()
+                    && a.host != host
+                    && now.saturating_duration_since(a.seen) <= REPLACED_AFTER
+            });
+        match other {
+            Some((_, a)) => Err(format!(
+                "this source is one Docker machine and already has {}: add a source for this machine too",
+                a.host.rsplit(":n:").next().unwrap_or(&a.host)
+            )),
+            None => Ok(()),
         }
     }
 
@@ -376,10 +407,18 @@ impl IngestServiceImp {
                         &format!("agent reporting · {count} nodes"),
                     );
                 }
-                Event::Contribution(nodes) => {
+                Event::Contribution(nodes, edges) => {
                     // one contribution per host: a new instance of the agent of the same node replaces the old one
                     let key = if host.is_empty() { agent } else { host };
-                    self.store.set_contribution(&src.id, key, nodes);
+                    if src.provider() == "docker" {
+                        // No agent describes this source as a whole: each machine adds itself. The cluster they hang from is the hub's.
+                        self.store.ensure_placeholder(src);
+                        self.store.set_stale(&src.id, false);
+                        // and it is one machine: a machine that replaced the one before it leaves nothing of it behind
+                        self.store.keep_only_contribution(&src.id, key);
+                    }
+                    self.store
+                        .set_contribution_with_edges(&src.id, key, nodes, edges);
                 }
                 Event::Alive(ids) => {
                     if let Some(ag) = self
@@ -475,7 +514,11 @@ impl IngestServiceImp {
         let silent = (topo_seen.or(any_seen)).is_some()
             && now.saturating_duration_since(seen) > SILENT_AFTER;
         // known before, but nothing has described the cluster since the hub started (workers may still be talking: they only report numbers)
+        // Docker machines of their own have nobody that describes the whole: each reports itself (a contribution), so an agent that is
+        // heard from is all there is to hear.
+        let machines_report = src.provider() == "docker" && any_seen.is_some();
         let gone = !have_topo
+            && !machines_report
             && src.state != "pending"
             && now.saturating_duration_since(self.started) > NO_AGENT_AFTER;
         if silent || gone {
@@ -537,6 +580,10 @@ impl IIngestService for IngestServiceImp {
 
     fn hello(&self, src: &Source, agent: &str, host: &str, info: HelloInfo<'_>) {
         self.hello_at(Instant::now(), src, agent, host, info);
+    }
+
+    fn admit(&self, src: &Source, agent: &str, host: &str) -> Result<(), String> {
+        self.admit_at(Instant::now(), src, agent, host)
     }
 
     fn agents(&self, source_id: &str) -> Vec<AgentInfo> {

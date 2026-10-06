@@ -97,7 +97,7 @@ async fn a_manager_reports_the_topology_and_what_it_measures_about_itself_and_it
         calls.iter().any(|c| matches!(c, Call::Topology(..)))
             && calls.iter().any(|c| matches!(c, Call::Metrics(..)))
             && calls.iter().any(|c| matches!(c, Call::Alive(_)))
-            && calls.iter().any(|c| matches!(c, Call::Contribution(_)))
+            && calls.iter().any(|c| matches!(c, Call::Contribution(_, _)))
     })
     .await;
     let calls = sink.calls();
@@ -163,9 +163,9 @@ async fn a_manager_reports_the_topology_and_what_it_measures_about_itself_and_it
     assert!(!task.contains_key("rxMbps"), "a rate needs two samples");
 
     // the volumes of this node: a contribution to the topology, and their usage with the numbers
-    let Some(Call::Contribution(volumes)) = calls
+    let Some(Call::Contribution(volumes, _)) = calls
         .iter()
-        .find(|c| matches!(c, Call::Contribution(_)))
+        .find(|c| matches!(c, Call::Contribution(_, _)))
         .cloned()
     else {
         panic!("no volumes contributed")

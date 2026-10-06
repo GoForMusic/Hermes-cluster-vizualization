@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::model::Source;
 use crate::services::{
@@ -85,6 +85,14 @@ impl AgentService for Agents {
                     .await;
                 return;
             };
+            if let Err(why) = ingest.admit(&source, &hello.agent, &hello.host) {
+                warn!(
+                    "agent {} refused by source {}: {why}",
+                    hello.agent, source.id
+                );
+                let _ = tx.send(Err(Status::already_exists(why))).await;
+                return;
+            }
             info!(
                 "agent {} connected to source {} (version {}, collector {}, protocol {})",
                 hello.agent, source.id, hello.version, hello.collector, hello.protocol

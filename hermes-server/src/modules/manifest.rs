@@ -4,13 +4,16 @@
 use anyhow::{Context, Result};
 use minijinja::{AutoEscape, Environment, context};
 
-use crate::model::{TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT};
+use crate::model::{TYPE_DOCKER_AGENT, TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT};
 
 const KUBERNETES: &str = include_str!("../../templates/agent_kubernetes.yaml.j2");
 const SWARM: &str = include_str!("../../templates/agent_swarm.yaml.j2");
+const DOCKER: &str = include_str!("../../templates/agent_docker.yaml.j2");
 
-const KUBERNETES_HINT: &str = "Save it as agent.yaml and run: kubectl apply -f agent.yaml. The image must be pullable by the cluster; for a private registry create the pull secret in the infraviz namespace first.";
-const SWARM_HINT: &str = "On a swarm manager save it as agent.yml and run: docker stack deploy --with-registry-auth -c agent.yml infraviz. For a private registry run docker login on the manager first; for an image that exists only locally add --resolve-image never. The service is global: every node must be able to get the image.";
+const KUBERNETES_HINT: &str = "Save it as agent.yaml and run: kubectl apply -f agent.yaml. The image must be pullable by the cluster; for a private registry create the pull secret in the hermes namespace first.";
+const SWARM_HINT: &str = "On a swarm manager save it as agent.yml and run: docker stack deploy --with-registry-auth -c agent.yml hermes. For a private registry run docker login on the manager first; for an image that exists only locally add --resolve-image never. The service is global: every node must be able to get the image.";
+
+const DOCKER_HINT: &str = "Save it as agent.yml on the Docker machine and run: docker compose -f agent.yml up -d. This source is this one machine: for another machine add another source. To say where the machine is: LOCATION=rack-2 docker compose -f agent.yml up -d. For a private registry run docker login on the machine first. When the file has a Windows service too, add --profile linux or --profile windows to say which kind of machine this is.";
 
 /// One agent type's installer: its template, the sentence that explains how to apply it, and whether it can also report who talks to
 /// whom. This is the one place a new agent type (Nomad, say) has to be added — `agent_types()`, `render()` and the flows check all
@@ -34,6 +37,12 @@ const AGENT_TYPES: &[AgentType] = &[
         key: TYPE_SWARM_AGENT,
         template: SWARM,
         hint: SWARM_HINT,
+        supports_flows: false,
+    },
+    AgentType {
+        key: TYPE_DOCKER_AGENT,
+        template: DOCKER,
+        hint: DOCKER_HINT,
         supports_flows: false,
     },
 ];

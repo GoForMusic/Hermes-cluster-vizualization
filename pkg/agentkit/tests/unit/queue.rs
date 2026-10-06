@@ -117,8 +117,8 @@ fn resync_repeats_alive_and_report_once_and_without_duplicates() {
 #[test]
 fn a_contribution_replaces_the_previous_one_and_is_sent_again_after_a_resync() {
     let mut s = State::default();
-    s.contribute(vec![node("v1")]);
-    s.contribute(vec![node("v1"), node("v2")]);
+    s.contribute_with_edges(vec![node("v1")], vec![]);
+    s.contribute_with_edges(vec![node("v1"), node("v2")], vec![]);
     let batch = s.take_batch();
     assert_eq!(
         kinds(&batch),
@@ -133,7 +133,7 @@ fn a_contribution_replaces_the_previous_one_and_is_sent_again_after_a_resync() {
     s.resync = true;
     assert_eq!(kinds(&s.take_batch()), ["contribution"], "the hub lost it");
     s.resync = true;
-    s.contribute(vec![node("v3")]);
+    s.contribute_with_edges(vec![node("v3")], vec![]);
     assert_eq!(
         kinds(&s.take_batch()),
         ["contribution"],

@@ -8,6 +8,16 @@ use serde_json::Value;
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct EngineInfo {
+    /// The engine's own id: what tells one Docker machine from another when it is not in a swarm.
+    #[serde(rename = "ID")]
+    pub id: String,
+    /// The machine's host name.
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "OperatingSystem")]
+    pub operating_system: String,
+    #[serde(rename = "Architecture")]
+    pub architecture: String,
     #[serde(rename = "ServerVersion")]
     pub server_version: String,
     #[serde(rename = "NCPU")]
@@ -327,4 +337,30 @@ pub struct VolumeUsage {
     /// Bytes the volume takes; -1 when the engine has not measured it.
     #[serde(rename = "Size")]
     pub size: i64,
+}
+
+/// One entry of `/containers/json?all=1`: any container on the machine, swarm or not.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ContainerSummary {
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "Names")]
+    pub names: Vec<String>,
+    #[serde(rename = "Image")]
+    pub image: String,
+    /// `running`, `exited`, `restarting`, `paused`, `created` or `dead`
+    #[serde(rename = "State")]
+    pub state: String,
+    /// The human line, like `Exited (1) 2 hours ago` or `Up 3 days (unhealthy)`.
+    #[serde(rename = "Status")]
+    pub status: String,
+    /// Unix seconds.
+    #[serde(rename = "Created")]
+    pub created: i64,
+    #[serde(rename = "Labels")]
+    pub labels: Option<HashMap<String, String>>,
+    /// The networks it is attached to, by name.
+    #[serde(rename = "NetworkSettings")]
+    pub network_settings: Option<ContainerNetworks>,
 }

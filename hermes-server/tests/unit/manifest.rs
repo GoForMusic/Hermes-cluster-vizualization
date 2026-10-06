@@ -2,13 +2,13 @@ use super::*;
 
 fn params(full: bool) -> AgentParams<'static> {
     AgentParams {
-        image: "registry.example.com/infraviz/agent:1.2.3",
+        image: "registry.example.com/hermes/agent:1.2.3",
         hub_url: "https://hub.example.com:8765",
         source_id: "s1a2b3c4d5e6",
         source_name: "prod cluster",
         token: "0123456789abcdef0123456789abcdef0123456789abcdef",
         windows_image: if full {
-            "registry.example.com/infraviz/agent-windows:1.2.3-ltsc2022"
+            "registry.example.com/hermes/agent-windows:1.2.3-ltsc2022"
         } else {
             ""
         },
@@ -68,7 +68,11 @@ fn an_unknown_type_has_no_installer() {
     assert!(render("Nomad (agent)", &params(false)).is_err());
     assert_eq!(
         agent_types(),
-        ["Docker Swarm (agent)", "Kubernetes (agent)"]
+        [
+            "Docker (agent)",
+            "Docker Swarm (agent)",
+            "Kubernetes (agent)"
+        ]
     );
 }
 
@@ -79,7 +83,7 @@ fn who_talks_to_whom_puts_the_node_agent_in_the_node_network_and_only_then() {
         ..params(false)
     };
     let (on, _) = render(TYPE_KUBERNETES_AGENT, &flows).unwrap();
-    let node = &on[on.find("name: infraviz-node").unwrap()..];
+    let node = &on[on.find("name: hermes-node").unwrap()..];
     assert!(
         node.contains("hostNetwork: true") && node.contains("ClusterFirstWithHostNet"),
         "the node agent runs in the node's network"
@@ -106,14 +110,14 @@ fn who_talks_to_whom_puts_the_node_agent_in_the_node_network_and_only_then() {
 #[test]
 fn a_registry_login_becomes_a_pull_secret_in_the_kubernetes_manifest() {
     let mut p = params(false);
-    p.pull_secret = "infraviz-registry";
+    p.pull_secret = "hermes-registry";
     let data = docker_config("git.example.com", "robot", "s3cret");
     p.pull_secret_data = &data;
     let (out, _) = render(TYPE_KUBERNETES_AGENT, &p).unwrap();
     assert!(out.contains("kind: Secret") && out.contains("type: kubernetes.io/dockerconfigjson"));
     assert!(out.contains(&format!(".dockerconfigjson: {data}")));
     assert_eq!(
-        out.matches("- name: infraviz-registry").count(),
+        out.matches("- name: hermes-registry").count(),
         2,
         "both the agent and the node agent use it"
     );
@@ -141,8 +145,8 @@ fn allowing_upgrades_adds_exactly_two_named_objects_to_the_rights_and_the_switch
     .unwrap();
     assert!(on.contains("kind: Role\n") && on.contains("kind: RoleBinding"));
     assert!(
-        on.contains("resourceNames: [\"infraviz-agent\"]")
-            && on.contains("resourceNames: [\"infraviz-node\"]")
+        on.contains("resourceNames: [\"hermes-agent\"]")
+            && on.contains("resourceNames: [\"hermes-node\"]")
     );
     assert_eq!(
         on.matches("verbs: [\"get\", \"patch\"]").count(),
@@ -164,4 +168,28 @@ fn allowing_upgrades_adds_exactly_two_named_objects_to_the_rights_and_the_switch
     )
     .unwrap();
     assert!(!swarm_off.contains("UPGRADES") && swarm_on.contains("UPGRADES: \"1\""));
+}
+
+#[test]
+fn a_docker_source_is_one_machine_with_its_own_compose_file() {
+    let (bare, hint) = render(TYPE_DOCKER_AGENT, &params(false)).unwrap();
+    assert!(bare.contains("COLLECTOR: docker"), "{bare}");
+    assert!(bare.contains(r#"SOURCE_ID: "s1a2b3c4d5e6""#));
+    assert!(bare.contains("NODE_LOCATION"));
+    assert!(
+        !bare.contains("agent-windows") && !bare.contains("profiles"),
+        "{bare}"
+    );
+    assert!(hint.contains("add another source"));
+
+    let (full, _) = render(TYPE_DOCKER_AGENT, &params(true)).unwrap();
+    assert!(
+        full.contains("agent-windows:") && full.contains("profiles: [windows]"),
+        "{full}"
+    );
+    assert!(full.contains("profiles: [linux]"), "{full}");
+    assert!(
+        full.contains(r"npipe") && full.contains("agent-windows:1.2.3-ltsc2022"),
+        "{full}"
+    );
 }

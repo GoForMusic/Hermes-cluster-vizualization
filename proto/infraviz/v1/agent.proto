@@ -125,6 +125,8 @@ message Alive {
 // the agent when it has none). A node names its parent host by id, as any node does. Sent again, whole, whenever it changes.
 message Contribution {
   repeated Node nodes = 1;
+  // Links between those nodes, or from them to nodes of the topology (a Docker network and the containers on it). Replaced together with the nodes.
+  repeated Edge edges = 2;
 }
 
 // Who talked to whom on the agent's host, from the kernel's connection tracking, over the last interval. One entry for each pair of addresses
@@ -217,6 +219,8 @@ enum Provider {
   PROVIDER_SWARM = 2;
   PROVIDER_NOMAD = 3;
   PROVIDER_STORAGE = 4;
+  // Docker engines on their own, with no orchestrator: one agent per machine.
+  PROVIDER_DOCKER = 5;
 }
 
 enum EdgeType {

@@ -22,7 +22,7 @@ pub struct AddSourceRequest {
     /// The agents may change their own image when the dashboard asks (Change agent version). Off, the agent stays strictly read-only.
     #[ts(as = "Option<bool>", optional)]
     pub upgrades: bool,
-    /// Swarm only: the cluster has Windows nodes, so the stack also gets the Windows agent.
+    /// Swarm and Docker: some machines are Windows, so the stack (or compose file) also gets the Windows agent.
     #[ts(as = "Option<bool>", optional)]
     pub windows: bool,
 }

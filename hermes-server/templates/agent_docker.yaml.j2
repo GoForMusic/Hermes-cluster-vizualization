@@ -1,0 +1,45 @@
+# HERMES agent for ONE Docker machine that is not part of a swarm: it reports this machine (CPU, memory) and the containers on it.
+# A source is one machine. For another machine, add another source in HERMES: each one gets its own file and token.
+services:
+  agent:
+    image: {{ Image }}
+    container_name: hermes-agent
+{%- if WindowsImage %}
+    profiles: [linux]
+{%- endif %}
+    # the socket is owned by root:docker, so the agent runs as root inside its container; everything else is locked down.
+    # NOTE: access to docker.sock is powerful (the API is not read-only even with a :ro mount).
+    user: "0"
+    read_only: true
+    cap_drop: [ALL]
+    restart: unless-stopped
+    environment:
+      HUB_URL: "{{ HubURL }}"
+      SOURCE_ID: "{{ SourceID }}"
+      SOURCE_NAME: "{{ SourceName }}"
+      COLLECTOR: docker
+      TOKEN: "{{ Token }}"
+      # where this machine is (rack, site, region): shown on the map: LOCATION=rack-2 docker compose up -d
+      NODE_LOCATION: "${LOCATION:-}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+{%- if WindowsImage %}
+  agent-windows:
+    image: {{ WindowsImage }}
+    container_name: hermes-agent
+    profiles: [windows]
+    user: ContainerAdministrator   # reading the Docker named pipe needs it
+    restart: unless-stopped
+    environment:
+      HUB_URL: "{{ HubURL }}"
+      SOURCE_ID: "{{ SourceID }}"
+      SOURCE_NAME: "{{ SourceName }}"
+      COLLECTOR: docker
+      TOKEN: "{{ Token }}"
+      NODE_LOCATION: "${LOCATION:-}"
+      DOCKER_SOCKET: "npipe:////./pipe/docker_engine"
+    volumes:
+      - type: npipe
+        source: '\\.\pipe\docker_engine'
+        target: '\\.\pipe\docker_engine'
+{%- endif %}

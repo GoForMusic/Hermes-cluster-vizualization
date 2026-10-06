@@ -7,7 +7,7 @@ import { isRunning } from '../../domain/status';
 import { useHubState, useWholeState } from '../../state/context';
 import { HeartbeatBar } from '../../ui/status';
 
-const TEAM = { kubernetes: 'k', swarm: 's', nomad: 'n', storage: 'd' } as const;
+const TEAM = { kubernetes: 'k', swarm: 's', docker: 's', nomad: 'n', storage: 'd' } as const;
 
 const summaryOf = (s: HubState): Summary => summary(s);
 const sameSummary = (a: Summary, b: Summary) => JSON.stringify(a) === JSON.stringify(b);

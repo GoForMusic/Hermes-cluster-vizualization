@@ -295,3 +295,87 @@ async fn a_browser_that_falls_behind_is_dropped_instead_of_holding_everything_up
         Err(broadcast::error::RecvError::Lagged(_))
     ));
 }
+
+fn link(id: &str) -> Edge {
+    Edge {
+        id: id.into(),
+        from: "net".into(),
+        to: "c".into(),
+        kind: "route".into(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn the_links_a_host_contributes_are_drawn_take_traffic_and_are_replaced_with_its_nodes() {
+    let s = StoreImp::new();
+    s.set_topology("s", vec![node("h1", "host", None)], vec![edge("base")]);
+    s.set_contribution_with_edges(
+        "s",
+        "h1",
+        vec![
+            node("net", "network", None),
+            node("c", "workload", Some("h1")),
+        ],
+        vec![link("net>c")],
+    );
+    let ids_of = |s: &StoreImp| s.edges().into_iter().map(|e| e.id).collect::<Vec<_>>();
+    assert_eq!(ids_of(&s), ["base", "net>c"]);
+    assert_eq!(s.edges_for("s").len(), 2);
+
+    s.apply_metrics(
+        &HashMap::new(),
+        &HashMap::from([("net>c".to_string(), 4.5)]),
+    );
+    assert_eq!(
+        s.edges()[1].mbps,
+        4.5,
+        "the rate lands on the contributed link"
+    );
+
+    // the agent that describes the cluster sends its topology again: the contributed link stays
+    s.set_topology("s", vec![node("h1", "host", None)], vec![edge("base")]);
+    assert_eq!(ids_of(&s), ["base", "net>c"]);
+
+    // the host contributes again, without the network: the link goes with it
+    s.set_contribution_with_edges("s", "h1", vec![node("c", "workload", Some("h1"))], vec![]);
+    assert_eq!(ids_of(&s), ["base"]);
+}
+
+#[test]
+fn links_that_came_before_the_topology_wait_for_it() {
+    let s = StoreImp::new();
+    s.set_contribution_with_edges(
+        "s",
+        "h1",
+        vec![node("net", "network", None), node("c", "workload", None)],
+        vec![link("net>c")],
+    );
+    assert!(s.edges().is_empty(), "no topology yet, nothing is drawn");
+    s.set_topology("s", vec![node("h1", "host", None)], vec![]);
+    assert_eq!(s.edges().len(), 1);
+}
+
+#[test]
+fn keeping_one_contribution_drops_the_others_with_their_links() {
+    let s = StoreImp::new();
+    s.set_topology("s", vec![node("c", "cluster", None)], vec![]);
+    s.set_contribution_with_edges(
+        "s",
+        "h1",
+        vec![node("a", "host", Some("c"))],
+        vec![link("a>x")],
+    );
+    s.set_contribution_with_edges(
+        "s",
+        "h2",
+        vec![node("b", "host", Some("c"))],
+        vec![link("b>x")],
+    );
+    assert_eq!(ids(&s), ["c", "a", "b"]);
+    s.keep_only_contribution("s", "h2");
+    assert_eq!(ids(&s), ["c", "b"]);
+    assert_eq!(s.edges().len(), 1);
+    s.keep_only_contribution("s", "h2"); // nothing else left: nothing changes
+    assert_eq!(ids(&s), ["c", "b"]);
+}
