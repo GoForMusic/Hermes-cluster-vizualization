@@ -21,6 +21,6 @@ version?: string,
  */
 upgrades?: boolean, 
 /**
- * Swarm only: the cluster has Windows nodes, so the stack also gets the Windows agent.
+ * Swarm and Docker: some machines are Windows, so the stack (or compose file) also gets the Windows agent.
  */
 windows?: boolean, };

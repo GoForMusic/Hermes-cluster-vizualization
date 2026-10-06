@@ -201,7 +201,7 @@ pub fn describe_batch(events: &[crate::services::Event]) -> (String, Value) {
             Event::Metrics { nodes, edges } => ("metrics", json!({"nodes": nodes, "edges": edges})),
             Event::Report { state, info } => ("report", json!({"state": state, "info": info})),
             Event::Alive(ids) => ("alive", json!({"ids": ids})),
-            Event::Contribution(nodes) => ("contribution", json!({"nodes": nodes})),
+            Event::Contribution(nodes, edges) => ("contribution", json!({"nodes": nodes, "edges": edges})),
             Event::Flows(flows) => (
                 "flows",
                 json!(flows.iter().map(|f| json!({"src": f.src, "dst": f.dst, "servedBy": f.served_by, "port": f.port, "proto": f.proto, "outMbps": f.out_mbps, "inMbps": f.in_mbps})).collect::<Vec<_>>()),

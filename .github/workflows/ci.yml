@@ -201,7 +201,7 @@ jobs:
       # target/ is in .dockerignore (the other Dockerfiles compile inside Docker and never need it sent) — stage the
       # one file the image needs outside it, so it's actually in the build context.
       - name: 📦 Stage the binary for the Docker build
-        run: Copy-Item target/release/infraviz-agent.exe agent-windows/agent.exe
+        run: Copy-Item target/release/hermes-agent.exe agent-windows/agent.exe
 
       # the Docker service exists on this image but isn't always started yet when the job gets to it
       - name: 🐳 Start the Docker service

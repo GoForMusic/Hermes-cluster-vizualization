@@ -18,7 +18,11 @@ pub trait ISink: Send + Sync {
     /// when the control plane, the only other source of their state, cannot be reached.
     fn alive(&self, ids: Vec<String>);
     /// Nodes only this collector can see (the volumes of its own machine). Each call replaces the previous one; the hub adds them to the topology.
-    fn contribute(&self, nodes: Vec<Node>);
+    fn contribute(&self, nodes: Vec<Node>) {
+        self.contribute_with_edges(nodes, Vec::new());
+    }
+    /// The same, with the links between them (a Docker network and the containers on it).
+    fn contribute_with_edges(&self, nodes: Vec<Node>, edges: Vec<Edge>);
     /// Who talked to whom on this host over the last interval. Only the newest matters. A collector that does not measure it never calls this.
     fn flows(&self, _flows: Vec<Flow>) {}
 }

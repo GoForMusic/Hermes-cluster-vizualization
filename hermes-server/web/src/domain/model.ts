@@ -11,7 +11,7 @@ export type Own = 'ok' | 'warn' | 'crit';
 /** What the web app shows: the state the source reports, corrected by what is known about the host and the source. */
 export type Status = Own | 'unknown';
 export type Kind = 'cluster' | 'host' | 'workload' | 'volume' | 'network';
-export type ProviderId = 'kubernetes' | 'swarm' | 'nomad' | 'storage';
+export type ProviderId = 'kubernetes' | 'swarm' | 'docker' | 'nomad' | 'storage';
 /** `route`: a path with no measured rate (a network and who is on it, an Ingress and its Services). */
 export type EdgeType = 'traffic' | 'control' | 'route';
 
@@ -101,7 +101,7 @@ export interface Edge {
 
 const KINDS: readonly Kind[] = ['cluster', 'host', 'workload', 'volume', 'network'];
 const EDGE_TYPES: readonly EdgeType[] = ['traffic', 'control', 'route'];
-const PROVIDERS: readonly ProviderId[] = ['kubernetes', 'swarm', 'nomad', 'storage'];
+const PROVIDERS: readonly ProviderId[] = ['kubernetes', 'swarm', 'docker', 'nomad', 'storage'];
 const OWNS: readonly Own[] = ['ok', 'warn', 'crit'];
 
 function oneOf<T extends string>(allowed: readonly T[], value: string, fallback: T): T {

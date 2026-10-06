@@ -45,9 +45,9 @@ export function Legend({ open, onOpenChange }: { open: boolean; onOpenChange: (o
       <button className="btn xs legend-btn" onClick={() => onOpenChange(!open)}>? Legend</button>
       <div className="lg-body">
         <div className="lg-h"><span>How to read this</span><button className="btn xs ghost" onClick={() => onOpenChange(false)}>✕</button></div>
-        <Row icon={<span className="lg-provs"><Icon name="kubernetes" size={17} color={PROVIDERS.kubernetes.color} /><Icon name="docker" size={17} color={PROVIDERS.swarm.color} /><Icon name="nomad" size={17} color={PROVIDERS.nomad.color} /></span>} title="Cluster">A group of machines managed by Kubernetes, Docker Swarm or Nomad.</Row>
+        <Row icon={<span className="lg-provs"><Icon name="kubernetes" size={17} color={PROVIDERS.kubernetes.color} /><Icon name="docker" size={17} color={PROVIDERS.swarm.color} /><Icon name="nomad" size={17} color={PROVIDERS.nomad.color} /></span>} title="Cluster">A group of machines managed by Kubernetes, Docker Swarm or Nomad. A Docker machine on its own (no swarm) is drawn the same way: a box with that one machine in it.</Row>
         <Row icon={<Icon name="server" size={20} color="var(--muted)" />} title="Host">{KIND_HELP.host}</Row>
-        <Row icon={<span className="mono" style={{ fontSize: 10, lineHeight: 1.2, textAlign: 'center' }}>LINUX<br />WINDOWS</span>} title="OS tag">The operating system of a host. Kubernetes and Swarm clusters can mix Linux and Windows nodes; the agent for each is a separate image.</Row>
+        <Row icon={<span className="mono" style={{ fontSize: 10, lineHeight: 1.2, textAlign: 'center' }}>LINUX<br />WINDOWS</span>} title="OS tag">The operating system of a host. Kubernetes, Swarm and Docker can mix Linux and Windows machines; the agent for each is a separate image.</Row>
         <Row icon={<Icon name="cube" size={20} color="var(--muted)" />} title="Workload">{KIND_HELP.workload}</Row>
         <Row icon={<Icon name="disk" size={20} color="var(--muted)" />} title="Volume">{KIND_HELP.volume}</Row>
         <Row icon={<Icon name="net" size={20} color="var(--muted)" />} title="Network">{KIND_HELP.network}</Row>

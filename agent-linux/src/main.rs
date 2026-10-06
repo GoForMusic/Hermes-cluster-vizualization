@@ -9,7 +9,7 @@
 //! * `CRI_SOCKET`     node only: the container runtime socket, so the agent can say which pods run on its node
 //! * `CONNTRACK_FILE` flows only: where the kernel's connection table is, default `/proc/net/nf_conntrack`
 //! * `UPGRADES`      `1` lets the hub change this agent's image (kubernetes and swarm); the install manifest sets it only when the admin allowed it
-//! * `DOCKER_SOCKET`  swarm only: the Docker engine's socket, default `/var/run/docker.sock`
+//! * `DOCKER_SOCKET`  swarm and docker only: the Docker engine's socket, default `/var/run/docker.sock`
 
 mod cri;
 mod flows;
@@ -89,8 +89,9 @@ async fn main() -> Result<()> {
             })
             .await
         }
-        "swarm" => {
-            hermes_swarm::run_agent(VERSION, "/var/run/docker.sock", || {
+        "swarm" | "docker" => {
+            // swarm: a node of a swarm. docker: a machine of its own, no swarm. Same code as the Windows agent.
+            hermes_swarm::run_collector(&collector, VERSION, "/var/run/docker.sock", || {
                 Box::new(LinuxSampler::default())
             })
             .await
@@ -105,6 +106,6 @@ async fn main() -> Result<()> {
             )
             .await
         }
-        other => bail!("unknown COLLECTOR {other:?} (kubernetes, swarm, node or flows)"),
+        other => bail!("unknown COLLECTOR {other:?} (kubernetes, swarm, docker, node or flows)"),
     }
 }

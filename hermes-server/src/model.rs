@@ -36,7 +36,9 @@ pub use registry::{
     DEFAULT_LINUX_IMAGE, DEFAULT_WINDOWS_IMAGE, RegistryConfig, RegistryInput, RegistryTest,
     RegistryView,
 };
-pub use source::{Source, TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT, is_agent_type};
+pub use source::{
+    Source, TYPE_DOCKER_AGENT, TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT, is_agent_type,
+};
 pub use source_view::SourceView;
 pub use upgrade_view::{UpgradeRequest, UpgradeView};
 pub use uptime::Uptime;

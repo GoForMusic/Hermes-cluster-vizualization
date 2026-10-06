@@ -44,7 +44,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     commLog: { enabled: false, capacity: 500, minutes: 15, heartbeats: 0, entries: [], newest: 0 },
     bodies: {},
     alerts: [],
-    registry: { url: '', project: '', auth: 'none', username: '', hasSecret: false, linuxImage: 'hermes-agent-linux', windowsImage: 'hermes-agent-windows' },
+    registry: { url: '', project: '', auth: 'none', username: '', hasSecret: false, linuxImage: 'hermes-agent-linux', windowsImage: 'hermes-agent-windows', implicit: false },
     registryTest: { ok: true, message: 'connected', versions: ['1.0.1', '1.0.0'] },
     data: { nodes: [wireNode('c', 'cluster', null), wireNode('h', 'host', 'c'), wireNode('w', 'workload', 'h', { meta: { ns: 'default' } })], edges: [] },
     client: null as unknown as IHubClient,
@@ -73,7 +73,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     },
     registry: {
       get: async () => hub.registry,
-      save: async (i) => { note(`registry.save:${i.url}:${i.auth}:${i.secret ?? '-'}`); hub.registry = { url: i.url, project: i.project, auth: i.auth, username: i.username, hasSecret: i.secret ? true : hub.registry.hasSecret, linuxImage: i.linuxImage, windowsImage: i.windowsImage }; return hub.registry; },
+      save: async (i) => { note(`registry.save:${i.url}:${i.auth}:${i.secret ?? '-'}`); hub.registry = { url: i.url, project: i.project, auth: i.auth, username: i.username, hasSecret: i.secret ? true : hub.registry.hasSecret, linuxImage: i.linuxImage, windowsImage: i.windowsImage, implicit: false }; return hub.registry; },
       test: async (i) => { note(`registry.test:${i.url}`); return hub.registryTest; },
       versions: async () => hub.registryTest,
     },

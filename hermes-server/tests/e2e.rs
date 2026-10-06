@@ -421,7 +421,7 @@ async fn an_added_source_gives_the_manifest_once_and_never_shows_its_token_again
     let info: Value = rig.get("/api/info").await.json().await.unwrap();
     assert_eq!(
         info,
-        json!({"demo": false, "sourceTypes": ["Docker Swarm (agent)", "Kubernetes (agent)"], "version": hermes_hub::version::VERSION})
+        json!({"demo": false, "sourceTypes": ["Docker (agent)", "Docker Swarm (agent)", "Kubernetes (agent)"], "version": hermes_hub::version::VERSION})
     );
 
     let (id, token) = rig.add_source("Kubernetes (agent)").await;

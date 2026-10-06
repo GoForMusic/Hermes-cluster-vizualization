@@ -17,6 +17,8 @@ struct Cluster {
     daemonset: Option<Value>,
     /// the images every patch asked for, in order: `daemonset:..`, `deployment:..`
     patches: Vec<String>,
+    /// the objects every patch went to, by name
+    patched: Vec<String>,
     /// the rollouts never become healthy
     stuck: bool,
 }
@@ -24,7 +26,7 @@ type Shared = Arc<Mutex<Cluster>>;
 
 fn workload(kind: &str, container: &str, image: &str) -> Value {
     json!({
-        "apiVersion": "apps/v1", "kind": kind, "metadata": {"name": "x", "namespace": "infraviz", "generation": 2},
+        "apiVersion": "apps/v1", "kind": kind, "metadata": {"name": "x", "namespace": "hermes", "generation": 2},
         "spec": {"replicas": 1, "selector": {"matchLabels": {"a": "b"}}, "template": {"metadata": {}, "spec": {"containers": [{"name": container, "image": image}]}}},
         "status": {}
     })
@@ -74,10 +76,11 @@ async fn fake(cluster: Shared) -> SocketAddr {
     }
     async fn patch(
         State(c): State<Shared>,
-        Path((kind, _name)): Path<(String, String)>,
+        Path((kind, name)): Path<(String, String)>,
         Json(body): Json<Value>,
     ) -> Json<Value> {
         let mut c = c.lock().unwrap();
+        c.patched.push(name);
         let container = &body["spec"]["template"]["spec"]["containers"][0];
         let image = container["image"].as_str().unwrap().to_string();
         c.patches.push(format!(
@@ -98,7 +101,7 @@ async fn fake(cluster: Shared) -> SocketAddr {
     }
     let app = Router::new()
         .route(
-            "/apis/apps/v1/namespaces/infraviz/{kind}/{name}",
+            "/apis/apps/v1/namespaces/hermes/{kind}/{name}",
             get(read).patch(patch),
         )
         .with_state(cluster);
@@ -113,7 +116,7 @@ async fn rig(cluster: Cluster) -> (K8sUpgrader, Shared) {
     let addr = fake(shared.clone()).await;
     let client =
         Client::try_from(kube::Config::new(format!("http://{addr}").parse().unwrap())).unwrap();
-    (K8sUpgrader::new(client, "infraviz").quick(), shared)
+    (K8sUpgrader::new(client, "hermes").quick(), shared)
 }
 
 fn cluster(node: bool) -> Cluster {
@@ -219,4 +222,14 @@ async fn a_version_that_is_not_one_is_refused_before_anything_is_touched() {
     let (up, state) = rig(cluster(true)).await;
     assert!(up.upgrade("../../evil").await.is_err());
     assert!(state.lock().unwrap().patches.is_empty());
+}
+
+#[tokio::test]
+async fn the_agent_changes_its_own_two_objects_by_name() {
+    let (up, state) = rig(cluster(true)).await;
+    up.upgrade("1.0.2").await.unwrap();
+    assert_eq!(
+        state.lock().unwrap().patched,
+        ["hermes-node", "hermes-agent"]
+    );
 }

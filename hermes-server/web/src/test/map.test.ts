@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeLinks, gridRef } from '../domain/map/links';
-import { CELL_W, MAX_NETWORKS, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
+import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
 import { Router } from '../domain/map/router';
 import { reduce } from '../domain/reducer';
 import { NOW, wireEdge, wireNode, world } from './fixtures';
@@ -241,5 +241,30 @@ describe('networks', () => {
     const tags = networkTags(s);
     expect([...tags.colors.keys()]).toEqual(['n1']);
     expect(new Set(networkTags(reduce(s, { type: 'snapshot', nodes: [...s.nodes.values(), net('n2'), net('n3')] as never, edges: [] }, NOW).state).colors.values()).size).toBe(3);
+  });
+});
+
+describe('resizing a host box', () => {
+  const eight = () => topologyShape(reduce(world(), { type: 'snapshot', nodes: [
+    wireNode('c', 'cluster', null), wireNode('h', 'host', 'c'),
+    ...['a', 'b', 'c2', 'd', 'e', 'f', 'g', 'i'].map((id) => wireNode(id, 'workload', 'h')),
+  ], edges: [] }, NOW).state, null);
+
+  it('lays the workloads out in the columns a person chose, and the host stays what it was without a choice', () => {
+    const auto = layoutTopology(eight()).hosts.get('h')!;
+    expect(auto.cols).toBe(autoCols(8));
+    const wide = layoutTopology(eight(), new Map([['h', 6]])).hosts.get('h')!;
+    expect(wide.cols).toBe(6);
+    expect(wide.w).toBeGreaterThan(auto.w); // wider
+    expect(wide.h).toBeLessThan(auto.h); // and so flatter
+    const narrow = layoutTopology(eight(), new Map([['h', 1]])).hosts.get('h')!;
+    expect(narrow.h).toBeGreaterThan(auto.h);
+    expect(narrow.items.every((it) => it.x === narrow.items[0]!.x)).toBe(true); // one column
+  });
+
+  it('never gives a host more columns than it has workloads or than the limit, nor fewer than one', () => {
+    expect(layoutTopology(eight(), new Map([['h', 99]])).hosts.get('h')!.cols).toBe(Math.min(MAX_COLS, 8));
+    expect(layoutTopology(eight(), new Map([['h', 0]])).hosts.get('h')!.cols).toBe(autoCols(8)); // 0 is no choice
+    expect(layoutTopology(eight(), new Map([['h', -3]])).hosts.get('h')!.cols).toBe(1);
   });
 });

@@ -8,6 +8,7 @@
 pub mod docker;
 pub mod engine;
 pub mod metrics;
+pub mod standalone;
 mod state;
 pub mod topology;
 pub mod upgrade;
@@ -30,6 +31,21 @@ use topology::Inputs;
 const POLL_EVERY: Duration = Duration::from_secs(3);
 /// This collector's own meta fields that change while the topology stays the same: a task's restart count and state, and its container.
 const RUNTIME_META: &[&str] = &["restarts", "phase", "containers"];
+
+/// The collectors of this crate, picked by name: what `COLLECTOR` says. Both agents (Linux and Windows) call this and nothing else, so
+/// they cannot disagree about what a name means or which names exist.
+pub async fn run_collector(
+    collector: &str,
+    version: &str,
+    default_socket: &str,
+    new_sampler: impl Fn() -> Box<dyn ISampler> + Send + Sync + 'static,
+) -> Result<()> {
+    match collector {
+        "swarm" => run_agent(version, default_socket, new_sampler).await,
+        "docker" => standalone::run_agent(version, default_socket, new_sampler).await,
+        other => bail!("unknown COLLECTOR {other:?} (swarm or docker)"),
+    }
+}
 
 /// Wires up a Swarm agent's `main`: `Config` and `DOCKER_SOCKET` (or `default_socket` when unset) from the environment, then reports to
 /// the hub until the process is asked to stop, restarting the collector on failure. This is the one thing that differs between the

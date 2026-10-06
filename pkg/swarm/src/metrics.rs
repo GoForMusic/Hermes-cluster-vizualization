@@ -18,7 +18,7 @@ use crate::docker::{EngineInfo, LocalContainer};
 use crate::engine::{Engine, pct_encode};
 use crate::volumes::VolumeWatch;
 
-mod stats;
+pub(crate) mod stats;
 mod task_stats;
 
 const EVERY: Duration = Duration::from_secs(5);

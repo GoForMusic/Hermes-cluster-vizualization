@@ -20,9 +20,25 @@ pub struct RegistryConfig {
     /// The repository names, under `project`.
     pub linux_image: String,
     pub windows_image: String,
+    /// Not chosen by the admin: what a hub that was never told a registry offers (see `project_default`). Never stored.
+    #[serde(skip)]
+    pub implicit: bool,
 }
 
 impl RegistryConfig {
+    /// Where the project's own agent images are published, public: what Add source offers until an admin sets up another registry (or
+    /// clears this one). Because nobody chose it, it never gets in the way: the version is optional and, with no way to list the
+    /// versions (a network with no internet), the manifest uses the image the hub was started with.
+    pub fn project_default() -> Self {
+        Self {
+            url: "ghcr.io".into(),
+            project: "goformusic".into(),
+            auth: "none".into(),
+            implicit: true,
+            ..Default::default()
+        }
+    }
+
     pub fn is_set(&self) -> bool {
         !self.url.trim().is_empty()
     }
@@ -103,6 +119,8 @@ pub struct RegistryView {
     pub has_secret: bool,
     pub linux_image: String,
     pub windows_image: String,
+    /// The project's own registry, offered because none was set up: the version in Add source is optional then.
+    pub implicit: bool,
 }
 
 impl From<&RegistryConfig> for RegistryView {
@@ -119,6 +137,7 @@ impl From<&RegistryConfig> for RegistryView {
             has_secret: !c.secret.is_empty(),
             linux_image: c.linux_repo().to_string(),
             windows_image: c.windows_repo().to_string(),
+            implicit: c.implicit,
         }
     }
 }
@@ -162,6 +181,7 @@ impl RegistryInput {
             },
             linux_image: self.linux_image.trim().to_string(),
             windows_image: self.windows_image.trim().to_string(),
+            implicit: false,
         }
     }
 }

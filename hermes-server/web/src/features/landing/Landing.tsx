@@ -6,7 +6,7 @@ export function Landing() {
     <div className="landing">
       <div>
         <h1 className="landing-logo"><img src="/assets/hermes-banner-transparent.png" alt="HERMES: messenger of the cluster" /></h1>
-        <p>A live map of your Kubernetes and Docker Swarm clusters: what runs where, what is using what, and what just broke.</p>
+        <p>A live map of your Kubernetes clusters, Docker Swarm clusters and Docker machines: what runs where, what is using what, and what just broke.</p>
       </div>
       <div className="landing-cards">
         <a className="landing-card" href="#/tv"><b>TV display</b><span>Read-only wallboard for a TV: every cluster at a glance, with incidents as they happen.</span></a>

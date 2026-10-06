@@ -33,7 +33,11 @@ export function deriveStatuses(nodes: Nodes, kids: Kids, settings: Settings, now
   for (const n of out.values()) {
     if (n.kind === 'cluster') continue;
     let st: Status = n.own;
-    if (n.kind !== 'host' && n.parent && nodes.get(n.parent)?.own === 'crit') st = 'unknown';
+    const parent = n.kind !== 'host' && n.parent ? nodes.get(n.parent) : undefined;
+    if (parent?.own === 'crit') st = 'unknown';
+    // A Docker machine is described by its own agent and nobody else: when that agent goes quiet nothing says its containers still run.
+    // (On Kubernetes the API still vouches for the pods of a node whose agent is silent, so there it stays as it is.)
+    if (parent?.stale && n.provider === 'docker') st = 'unknown';
     // its source cannot be reached: what we hold is the last known state, not the current one (a host last seen down stays down)
     if (n.stale && st !== 'crit') st = 'unknown';
     status.set(n.id, st);

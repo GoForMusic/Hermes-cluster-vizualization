@@ -1,7 +1,7 @@
 // A host's box on the map: the plain frame drawn under the links (`MapHost`), and its text/icons drawn over them afterwards
 // (`HostLabel`) so a line passing behind a name never runs through it.
-import { memo, type MouseEvent } from 'react';
-import type { HostBox } from '../../domain/map/layout';
+import { memo, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { CELL_W, MAX_COLS, type HostBox } from '../../domain/map/layout';
 import type { Node } from '../../domain/model';
 import { PROVIDERS, TF_COLOR } from '../../domain/providers';
 import { IconG } from '../../ui/icons';
@@ -38,6 +38,31 @@ export const HostLabel = memo(function HostLabel({ box, host, stat, selected, on
       ) : null}
       <text className="host-sub" x={box.x + 10} y={box.y + 44}>{host.meta.ip} · {host.meta.role}</text>
       <text className="host-stat" x={box.x + 10} y={box.y + 59}>{stat}</text>
+    </g>
+  );
+});
+
+/**
+ * The handle in the bottom-right corner of a host's box: dragging it sideways changes how many columns the workloads are laid out in
+ * (wider and flatter, or narrower and taller); a double click goes back to the automatic layout.
+ */
+export const HostGrip = memo(function HostGrip({ box, scale, onHold, onCols }: { box: HostBox; scale: number; onHold: () => void; onCols: (cols: number | null) => void }) {
+  const start = (e: ReactPointerEvent<SVGGElement>) => {
+    e.stopPropagation(); // not a pan of the map
+    e.preventDefault();
+    onHold(); // the map stays where it is while the box changes size
+    const x0 = e.clientX, cols0 = box.cols, max = Math.min(MAX_COLS, Math.max(box.items.length, 1));
+    const move = (ev: PointerEvent) => onCols(Math.min(Math.max(Math.round(cols0 + (ev.clientX - x0) / scale / CELL_W), 1), max));
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const x = box.x + box.w - 5, y = box.y + box.h - 5;
+  return (
+    <g className="host-grip" onPointerDown={start} onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); onCols(null); }}>
+      <title>Drag sideways to change the width of this box (how many columns). Double click: automatic.</title>
+      <rect x={x - 16} y={y - 16} width={20} height={20} fill="transparent" />
+      <path d={`M${x - 3} ${y - 12} L${x - 12} ${y - 3} M${x - 3} ${y - 7} L${x - 7} ${y - 3}`} />
     </g>
   );
 });

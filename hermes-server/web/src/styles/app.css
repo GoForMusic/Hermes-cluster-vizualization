@@ -554,3 +554,8 @@ dialog h2 { margin: 0 0 14px; font-size: 18px; }
 .landing-logo { margin: 0; }
 .landing-logo img { display: block; width: min(760px, 96vw); height: auto; margin: -64px auto -54px; } /* the banner has a wide transparent margin */
 
+
+/* the corner of a host's box that stretches it */
+.host-grip { cursor: nwse-resize; }
+.host-grip path { fill: none; stroke: var(--text-dim, var(--line)); stroke-width: 1.6; stroke-linecap: round; opacity: .55; }
+.host-grip:hover path { stroke: var(--accent); opacity: 1; }

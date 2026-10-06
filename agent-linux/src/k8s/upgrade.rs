@@ -1,6 +1,6 @@
 //! Upgrading the agent from the dashboard, on Kubernetes: the hub asks for a version and this changes the image of the agent's own
-//! Deployment (`infraviz-agent`, the cluster reader) and DaemonSet (`infraviz-node`, one per node) to that tag, keeping the registry
-//! and repository they already have. Kubernetes replaces the pods one at a time; what does not come up healthy is put back.
+//! Deployment (`hermes-agent`, the cluster reader) and DaemonSet (`hermes-node`, one per node) to that tag, keeping the registry and
+//! repository they already have. Kubernetes replaces the pods one at a time; what does not come up healthy is put back.
 //!
 //! The install manifest gives the service account rights to read and patch exactly these two objects, and only when the admin ticked
 //! "allow upgrades" when adding the source.
@@ -16,8 +16,8 @@ use kube::api::{Api, Patch, PatchParams};
 use serde_json::json;
 use tracing::{info, warn};
 
-const DEPLOYMENT: &str = "infraviz-agent";
-const DAEMONSET: &str = "infraviz-node";
+const DEPLOYMENT: &str = "hermes-agent";
+const DAEMONSET: &str = "hermes-node";
 /// The container of each, by name (the strategic merge patch finds it by it).
 const DEPLOYMENT_CONTAINER: &str = "agent";
 const DAEMONSET_CONTAINER: &str = "node";

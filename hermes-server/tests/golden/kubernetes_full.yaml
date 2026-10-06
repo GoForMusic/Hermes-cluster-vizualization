@@ -1,19 +1,19 @@
-# Infra Viz agent for Kubernetes. Read-only: it can list nodes, pods and PVCs and read metrics, nothing else.
+# HERMES agent for Kubernetes. Read-only: it can list nodes, pods and PVCs and read metrics, nothing else.
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: infraviz
+  name: hermes
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: infraviz-agent
-  namespace: infraviz
+  name: hermes-agent
+  namespace: hermes
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: infraviz-agent
+  name: hermes-agent
 rules:
   - apiGroups: [""]
     resources: ["nodes", "pods", "persistentvolumeclaims", "namespaces", "services"]
@@ -37,21 +37,21 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: infraviz-agent
+  name: hermes-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: infraviz-agent
+  name: hermes-agent
 subjects:
   - kind: ServiceAccount
-    name: infraviz-agent
-    namespace: infraviz
+    name: hermes-agent
+    namespace: hermes
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: infraviz-agent
-  namespace: infraviz
+  name: hermes-agent
+  namespace: hermes
 type: Opaque
 stringData:
   token: "0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -59,17 +59,17 @@ stringData:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: infraviz-agent
-  namespace: infraviz
+  name: hermes-agent
+  namespace: hermes
 spec:
   replicas: 1
   selector:
-    matchLabels: { app: infraviz-agent }
+    matchLabels: { app: hermes-agent }
   template:
     metadata:
-      labels: { app: infraviz-agent }
+      labels: { app: hermes-agent }
     spec:
-      serviceAccountName: infraviz-agent
+      serviceAccountName: hermes-agent
       nodeSelector:
         kubernetes.io/os: linux   # the agent image is Linux; Windows nodes are watched through the API, no agent needed there
       # Where it runs: on a control-plane node when there is one, because that is where the API it reads lives (if that node goes down
@@ -93,7 +93,7 @@ spec:
         - name: regcred
       containers:
         - name: agent
-          image: registry.example.com/infraviz/agent:1.2.3
+          image: registry.example.com/hermes/agent:1.2.3
           imagePullPolicy: IfNotPresent
           env:
             - { name: HUB_URL, value: "https://hub.example.com:8765" }
@@ -102,7 +102,7 @@ spec:
             - { name: COLLECTOR, value: "kubernetes" }
             - name: TOKEN
               valueFrom:
-                secretKeyRef: { name: infraviz-agent, key: token }
+                secretKeyRef: { name: hermes-agent, key: token }
           resources:
             requests: { cpu: 20m, memory: 32Mi }
             limits: { memory: 128Mi }
@@ -123,14 +123,14 @@ spec:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: infraviz-node
-  namespace: infraviz
+  name: hermes-node
+  namespace: hermes
 spec:
   selector:
-    matchLabels: { app: infraviz-node }
+    matchLabels: { app: hermes-node }
   template:
     metadata:
-      labels: { app: infraviz-node }
+      labels: { app: hermes-node }
     spec:
       automountServiceAccountToken: false   # it never talks to the cluster API
       nodeSelector:
@@ -141,7 +141,7 @@ spec:
         - name: regcred
       containers:
         - name: node
-          image: registry.example.com/infraviz/agent:1.2.3
+          image: registry.example.com/hermes/agent:1.2.3
           imagePullPolicy: IfNotPresent
           env:
             - { name: HUB_URL, value: "https://hub.example.com:8765" }
@@ -155,7 +155,7 @@ spec:
             - { name: CRI_SOCKET, value: "/run/containerd/containerd.sock" }
             - name: TOKEN
               valueFrom:
-                secretKeyRef: { name: infraviz-agent, key: token }
+                secretKeyRef: { name: hermes-agent, key: token }
           resources:
             requests: { cpu: 5m, memory: 16Mi }
             limits: { memory: 64Mi }

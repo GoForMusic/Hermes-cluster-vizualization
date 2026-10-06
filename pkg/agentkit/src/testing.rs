@@ -16,7 +16,7 @@ pub enum Call {
     Metrics(HashMap<String, HashMap<String, f64>>, HashMap<String, f64>),
     Report(CollectorState, String),
     Alive(Vec<String>),
-    Contribution(Vec<Node>),
+    Contribution(Vec<Node>, Vec<Edge>),
 }
 
 #[derive(Default)]
@@ -59,7 +59,7 @@ impl ISink for RecordingSink {
     fn alive(&self, ids: Vec<String>) {
         self.push(Call::Alive(ids));
     }
-    fn contribute(&self, nodes: Vec<Node>) {
-        self.push(Call::Contribution(nodes));
+    fn contribute_with_edges(&self, nodes: Vec<Node>, edges: Vec<Edge>) {
+        self.push(Call::Contribution(nodes, edges));
     }
 }

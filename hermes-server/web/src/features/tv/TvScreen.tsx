@@ -76,7 +76,7 @@ export function TvScreen() {
 
       <div className="tv-main">
         <div className="tv-graph-wrap">
-          <div className="tv-graph"><TopologyMap visible={visible} focusId={focusId} inset={INSET} /></div>
+          <div className="tv-graph"><TopologyMap visible={visible} focusId={focusId} inset={INSET} interactive maxFit={4} /></div>
           {clusters.length ? null : <div className="empty-map"><div><b>No data sources yet</b>Add a Kubernetes cluster in <a href="#/admin/sources">Admin → Sources</a>.</div></div>}
           <Banner crit={crit} warn={warn} />
           <div className="killfeed">

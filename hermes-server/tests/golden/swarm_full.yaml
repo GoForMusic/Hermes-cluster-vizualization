@@ -1,10 +1,10 @@
-# Infra Viz agent for Docker Swarm. One agent per node (global): every node reports its own CPU and memory,
+# HERMES agent for Docker Swarm. One agent per node (global): every node reports its own CPU and memory,
 # and the agent on a manager also reports nodes, services and tasks. Deploy this from a swarm MANAGER.
 # A cluster can mix Linux and Windows nodes: each OS gets its own service and image.
 version: "3.8"
 services:
   agent:
-    image: registry.example.com/infraviz/agent:1.2.3
+    image: registry.example.com/hermes/agent:1.2.3
     # the socket is owned by root:docker, so the agent runs as root inside its container; everything else is locked down.
     # NOTE: access to docker.sock is powerful (the API is not read-only even with a :ro mount).
     user: "0"
@@ -26,7 +26,7 @@ services:
       restart_policy:
         condition: any
   agent-windows:
-    image: registry.example.com/infraviz/agent-windows:1.2.3-ltsc2022
+    image: registry.example.com/hermes/agent-windows:1.2.3-ltsc2022
     user: ContainerAdministrator   # reading the Docker named pipe needs it
     environment:
       HUB_URL: "https://hub.example.com:8765"

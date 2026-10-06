@@ -57,6 +57,7 @@ fn provider_name(provider: pb::Provider) -> &'static str {
         pb::Provider::Swarm => "swarm",
         pb::Provider::Nomad => "nomad",
         pb::Provider::Storage => "storage",
+        pb::Provider::Docker => "docker",
     }
 }
 

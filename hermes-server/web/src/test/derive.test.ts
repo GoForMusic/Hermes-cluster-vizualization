@@ -27,6 +27,14 @@ describe('the effective status', () => {
     expect(status(s, 'w3')).toBe('ok');
   });
 
+  it('makes the containers of a Docker machine unknown when its own agent goes quiet, but not the pods of a Kubernetes node', () => {
+    const docker = world({ h1: { stale: true, provider: 'docker' }, w1: { provider: 'docker' }, w2: { provider: 'docker' } });
+    expect([status(docker, 'w1'), status(docker, 'w2')]).toEqual(['unknown', 'unknown']);
+    expect(status(docker, 'w3')).toBe('ok'); // another machine, still talking
+    const kubernetes = world({ h1: { stale: true } });
+    expect([status(kubernetes, 'w1'), status(kubernetes, 'w2')]).toEqual(['ok', 'ok']); // the API still vouches for them
+  });
+
   it('makes what an unreachable source reported unknown: the last known state is not the current one', () => {
     const s = world({ h1: { stale: true }, h2: { stale: true }, w1: { stale: true, own: 'warn' }, w3: { stale: true } });
     expect([status(s, 'h1'), status(s, 'h2'), status(s, 'w1'), status(s, 'w3')]).toEqual(['unknown', 'unknown', 'unknown', 'unknown']);

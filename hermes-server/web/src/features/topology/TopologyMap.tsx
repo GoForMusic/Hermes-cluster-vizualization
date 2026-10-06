@@ -13,8 +13,9 @@ import { edgeBroken, isDeduced, isSystem, mountLinks, shownKids } from '../../do
 import { IconG } from '../../ui/icons';
 import { useWholeState } from '../../state/context';
 import { usePanZoom, type Inset } from './usePanZoom';
+import { useHostCols } from './useHostCols';
 import { Grid } from './Grid';
-import { MapHost, HostLabel } from './MapHost';
+import { MapHost, HostLabel, HostGrip } from './MapHost';
 import { MapNode, MoreNetworks } from './MapNode';
 import { MapLink } from './MapLink';
 
@@ -24,27 +25,30 @@ export interface TopologyMapProps {
   interactive?: boolean;
   focusId?: string | null;
   inset?: Inset;
+  maxFit?: number;
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
   onCursor?: (gridRef: string, zoom: number) => void;
   showLabels?: boolean;
 }
 
-export function TopologyMap({ visible = null, interactive = false, focusId = null, inset, selectedId = null, onSelect, onCursor, showLabels = true }: TopologyMapProps) {
+export function TopologyMap({ visible = null, interactive = false, focusId = null, inset, maxFit, selectedId = null, onSelect, onCursor, showLabels = true }: TopologyMapProps) {
   const state = useWholeState();
   const uid = useId();
 
   const shape = topologyShape(state, visible);
   const sig = shapeSignature(shape);
   // the signature says when the shape changed: the layout is not computed again for a new sample
-  const layout = useMemo(() => layoutTopology(shape), [sig]);
+  const hostCols = useHostCols();
+  const colsSig = [...hostCols.cols].map(([id, n]) => `${id}=${n}`).join(',');
+  const layout = useMemo(() => layoutTopology(shape, hostCols.cols), [sig, colsSig]);
   const edges = [...state.edges, ...mountLinks(state)]; // a volume is joined to the workloads that mount it
   const edgeSig = edges.map((e) => `${e.id}${e.type}${e.from}${e.to}`).join('|');
   // routing the links is the expensive part: it is redone only when the shape or the links themselves change
   const links = useMemo(() => new Map(computeLinks(layout, edges).map((l) => [l.edgeId, l])), [layout, edgeSig]);
 
   const tags = networkTags(state);
-  const zoom = usePanZoom({ layout, focusId, interactive, inset, onCursor });
+  const zoom = usePanZoom({ layout, focusId, interactive, inset, maxFit, onCursor });
 
   const related = new Set<string>();
   if (selectedId) {
@@ -100,6 +104,11 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
             return host ? <HostLabel key={h.id} box={h} host={host} stat={hostStat(state, host)} selected={selectedId === host.id} onClick={select(h.id)} /> : null;
           }))}
         </g>
+        {interactive ? (
+          <g>
+            {layout.clusters.flatMap((c) => c.hosts.map((h) => <HostGrip key={h.id} box={h} scale={view.k} onHold={zoom.hold} onCols={(n) => hostCols.set(h.id, n)} />))}
+          </g>
+        ) : null}
       </g>
     </svg>
   );

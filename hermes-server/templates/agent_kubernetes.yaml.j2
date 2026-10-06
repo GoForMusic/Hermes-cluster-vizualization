@@ -1,15 +1,15 @@
-# Infra Viz agent for Kubernetes. Read-only: it can list nodes, pods and PVCs and read metrics, nothing else.
+# HERMES agent for Kubernetes. Read-only: it can list nodes, pods and PVCs and read metrics, nothing else.
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: infraviz
+  name: hermes
 ---
 {%- if PullSecretData %}
 apiVersion: v1
 kind: Secret
 metadata:
   name: {{ PullSecret }}
-  namespace: infraviz
+  namespace: hermes
 type: kubernetes.io/dockerconfigjson
 data:
   .dockerconfigjson: {{ PullSecretData }}
@@ -18,13 +18,13 @@ data:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: infraviz-agent
-  namespace: infraviz
+  name: hermes-agent
+  namespace: hermes
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: infraviz-agent
+  name: hermes-agent
 rules:
   - apiGroups: [""]
     resources: ["nodes", "pods", "persistentvolumeclaims", "namespaces", "services"]
@@ -48,15 +48,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: infraviz-agent
+  name: hermes-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: infraviz-agent
+  name: hermes-agent
 subjects:
   - kind: ServiceAccount
-    name: infraviz-agent
-    namespace: infraviz
+    name: hermes-agent
+    namespace: hermes
 ---
 {%- if Upgrades %}
 # Allowed when this source was added: the dashboard's "Change agent version". The agent may read and patch these two objects, and only these
@@ -64,38 +64,38 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: infraviz-agent-upgrade
-  namespace: infraviz
+  name: hermes-agent-upgrade
+  namespace: hermes
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["infraviz-agent"]
+    resourceNames: ["hermes-agent"]
     verbs: ["get", "patch"]
   - apiGroups: ["apps"]
     resources: ["daemonsets"]
-    resourceNames: ["infraviz-node"]
+    resourceNames: ["hermes-node"]
     verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: infraviz-agent-upgrade
-  namespace: infraviz
+  name: hermes-agent-upgrade
+  namespace: hermes
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: infraviz-agent-upgrade
+  name: hermes-agent-upgrade
 subjects:
   - kind: ServiceAccount
-    name: infraviz-agent
-    namespace: infraviz
+    name: hermes-agent
+    namespace: hermes
 ---
 {%- endif %}
 apiVersion: v1
 kind: Secret
 metadata:
-  name: infraviz-agent
-  namespace: infraviz
+  name: hermes-agent
+  namespace: hermes
 type: Opaque
 stringData:
   token: "{{ Token }}"
@@ -103,17 +103,17 @@ stringData:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: infraviz-agent
-  namespace: infraviz
+  name: hermes-agent
+  namespace: hermes
 spec:
   replicas: 1
   selector:
-    matchLabels: { app: infraviz-agent }
+    matchLabels: { app: hermes-agent }
   template:
     metadata:
-      labels: { app: infraviz-agent }
+      labels: { app: hermes-agent }
     spec:
-      serviceAccountName: infraviz-agent
+      serviceAccountName: hermes-agent
       nodeSelector:
         kubernetes.io/os: linux   # the agent image is Linux; Windows nodes are watched through the API, no agent needed there
       # Where it runs: on a control-plane node when there is one, because that is where the API it reads lives (if that node goes down
@@ -151,7 +151,7 @@ spec:
 {%- endif %}
             - name: TOKEN
               valueFrom:
-                secretKeyRef: { name: infraviz-agent, key: token }
+                secretKeyRef: { name: hermes-agent, key: token }
           resources:
             requests: { cpu: 20m, memory: 32Mi }
             limits: { memory: 128Mi }
@@ -172,14 +172,14 @@ spec:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: infraviz-node
-  namespace: infraviz
+  name: hermes-node
+  namespace: hermes
 spec:
   selector:
-    matchLabels: { app: infraviz-node }
+    matchLabels: { app: hermes-node }
   template:
     metadata:
-      labels: { app: infraviz-node }
+      labels: { app: hermes-node }
     spec:
       automountServiceAccountToken: false   # it never talks to the cluster API
 {%- if Flows %}
@@ -216,7 +216,7 @@ spec:
 {%- endif %}
             - name: TOKEN
               valueFrom:
-                secretKeyRef: { name: infraviz-agent, key: token }
+                secretKeyRef: { name: hermes-agent, key: token }
           resources:
             requests: { cpu: 5m, memory: 16Mi }
             limits: { memory: 64Mi }
