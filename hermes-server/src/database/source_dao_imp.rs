@@ -16,6 +16,8 @@ pub trait ISourceDAO: Send + Sync {
     fn list_sources(&self) -> Result<Vec<Source>>;
     fn insert_source(&self, s: &Source) -> Result<()>;
     fn delete_source(&self, id: &str) -> Result<()>;
+    /// Changes only the name: the id and the token stay, so the agents already installed keep working.
+    fn rename_source(&self, id: &str, name: &str) -> Result<()>;
     fn set_source_state(&self, id: &str, state: &str, info: &str) -> Result<()>;
 }
 
@@ -79,6 +81,13 @@ impl ISourceDAO for SourceDAOImp {
         self.ctx
             .conn()
             .execute("DELETE FROM sources WHERE id=?1", [id])?;
+        Ok(())
+    }
+
+    fn rename_source(&self, id: &str, name: &str) -> Result<()> {
+        self.ctx
+            .conn()
+            .execute("UPDATE sources SET name=?1 WHERE id=?2", [name, id])?;
         Ok(())
     }
 

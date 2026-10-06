@@ -150,6 +150,8 @@ pub trait IStore: Send + Sync {
         nodes: Vec<Node>,
         edges: Vec<Edge>,
     );
+    /// The source was renamed: its cluster shows the new name at once.
+    fn rename_cluster(&self, src: &str, name: &str);
     /// Drops what every other host contributed to the source: for a source that is one machine, which a new machine replaces.
     fn keep_only_contribution(&self, src: &str, host: &str);
     /// Marks everything a source reported as out of date (or current again). While a source cannot be reached the hub still holds its
@@ -286,6 +288,24 @@ impl IStore for StoreImp {
         }
         g.reindex();
         self.send(g.snapshot_json());
+    }
+
+    fn rename_cluster(&self, src: &str, name: &str) {
+        let mut g = self.write();
+        let mut changed = false;
+        if let Some(topo) = g.topos.get_mut(src) {
+            for n in topo
+                .nodes
+                .iter_mut()
+                .filter(|n| n.kind == "cluster" && n.id == src && n.name != name)
+            {
+                n.name = name.to_string();
+                changed = true;
+            }
+        }
+        if changed {
+            self.send(g.snapshot_json());
+        }
     }
 
     fn keep_only_contribution(&self, src: &str, host: &str) {

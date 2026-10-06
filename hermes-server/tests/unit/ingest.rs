@@ -833,3 +833,64 @@ fn an_agent_that_still_talks_after_its_source_was_removed_does_not_bring_the_clu
         r.store.nodes()
     );
 }
+
+#[test]
+fn a_source_that_was_renamed_keeps_the_new_name_for_its_cluster_whatever_the_agent_says() {
+    let r = rig();
+    let src = r.source("s", "pending"); // the agent was installed with the name of the first version
+    r.svc
+        .handle_at(r.at(0), &src, "manager", "", vec![snapshot(&["h1"])]);
+    let mut cluster = node("s", "cluster", None);
+    cluster.name = "old name".into();
+    r.svc.handle_at(
+        r.at(1),
+        &src,
+        "manager",
+        "",
+        vec![Event::Snapshot {
+            nodes: vec![cluster.clone()],
+            edges: vec![],
+        }],
+    );
+    assert_eq!(
+        r.store
+            .nodes()
+            .iter()
+            .find(|n| n.kind == "cluster")
+            .unwrap()
+            .name,
+        "name-s"
+    );
+
+    // renamed in the database and in the store, as the controller does; the agent still sends its old name in the next snapshot
+    r.db.rename_source("s", "renamed").unwrap();
+    r.store.rename_cluster("s", "renamed");
+    assert_eq!(
+        r.store
+            .nodes()
+            .iter()
+            .find(|n| n.kind == "cluster")
+            .unwrap()
+            .name,
+        "renamed"
+    );
+    r.svc.handle_at(
+        r.at(2),
+        &src,
+        "manager",
+        "",
+        vec![Event::Snapshot {
+            nodes: vec![cluster],
+            edges: vec![],
+        }],
+    );
+    assert_eq!(
+        r.store
+            .nodes()
+            .iter()
+            .find(|n| n.kind == "cluster")
+            .unwrap()
+            .name,
+        "renamed"
+    );
+}

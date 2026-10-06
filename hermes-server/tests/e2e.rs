@@ -991,3 +991,73 @@ async fn the_communication_log_is_for_a_logged_in_admin_only() {
         .unwrap();
     assert_eq!(put.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn a_source_is_renamed_without_touching_its_token_and_a_name_in_use_is_refused() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (first, _) = rig.add_source("Docker (agent)").await;
+    let (second, _) = rig.add_source("Docker (agent)").await; // both are called "lab": the mistake this is for
+
+    let path = |id: &str| format!("/api/sources/{id}");
+    let ok = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&first),
+            json!({"name": "  lab-docker-w1  "}),
+        )
+        .await;
+    assert_eq!(ok.status(), StatusCode::OK);
+    let listed: Value = rig.get("/api/sources").await.json().await.unwrap();
+    let names: Vec<&str> = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"lab-docker-w1"),
+        "{names:?} (the name is trimmed)"
+    );
+
+    let taken = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&second),
+            json!({"name": "LAB-docker-w1"}),
+        )
+        .await;
+    assert_eq!(
+        taken.status(),
+        StatusCode::CONFLICT,
+        "case does not make it another name"
+    );
+    let empty = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&second),
+            json!({"name": "   "}),
+        )
+        .await;
+    assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
+    let gone = rig
+        .send(
+            reqwest::Method::PATCH,
+            "/api/sources/nope",
+            json!({"name": "x"}),
+        )
+        .await;
+    assert_eq!(gone.status(), StatusCode::NOT_FOUND);
+    let same = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&first),
+            json!({"name": "lab-docker-w1"}),
+        )
+        .await;
+    assert_eq!(
+        same.status(),
+        StatusCode::OK,
+        "keeping its own name is not a conflict"
+    );
+}

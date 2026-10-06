@@ -329,18 +329,28 @@ impl IngestServiceImp {
         events: Vec<Event>,
     ) -> bool {
         // An agent whose source was removed keeps its stream until the next check of its token: what it sends in the meantime must not
-        // draw the cluster again (nothing would ever remove it). Only what creates a topology needs the check.
+        // draw the cluster again (nothing would ever remove it). Only what creates a topology needs the check, and it is made against the
+        // database, which also has the name the admin gave the source since the agent started (the agent keeps saying the old one).
         let creates = events
             .iter()
             .any(|e| matches!(e, Event::Snapshot { .. } | Event::Contribution(..)));
-        if creates
-            && !self
+        let fresh;
+        let src = if creates {
+            match self
                 .db
                 .list_sources()
-                .is_ok_and(|list| list.iter().any(|s| s.id == src.id))
-        {
-            return false;
-        }
+                .ok()
+                .and_then(|list| list.into_iter().find(|s| s.id == src.id))
+            {
+                Some(s) => {
+                    fresh = s;
+                    &fresh
+                }
+                None => return false,
+            }
+        } else {
+            src
+        };
         // does this batch describe the cluster, or only this agent's machine?
         let topo_batch = events.iter().any(|e| {
             matches!(
@@ -406,8 +416,15 @@ impl IngestServiceImp {
         let mut saw_snapshot = false;
         for event in events {
             match event {
-                Event::Snapshot { nodes, edges } => {
+                Event::Snapshot { mut nodes, edges } => {
                     saw_snapshot = true;
+                    // the cluster is called what the admin called the source, not what the agent was installed with
+                    for n in nodes
+                        .iter_mut()
+                        .filter(|n| n.kind == "cluster" && n.id == src.id)
+                    {
+                        n.name = src.name.clone();
+                    }
                     let count = nodes.len();
                     if self.guard.set_topology(&src.id, nodes, edges).is_err() {
                         // the guard wrote the state; remember it so that a later success is written too

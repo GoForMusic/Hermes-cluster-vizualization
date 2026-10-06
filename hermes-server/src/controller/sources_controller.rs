@@ -227,6 +227,67 @@ pub(super) async fn add_source(State(st): State<Shared>, _: Admin, body: Bytes) 
     )
 }
 
+/// What the admin page sends to change a source: only its name (the type, the token and the address in the manifest stay).
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct RenameRequest {
+    name: String,
+}
+
+const NAME_MAX: usize = 80;
+
+/// Renames a source. Nothing is redeployed: the id and the token do not change, and the hub shows its own name for the cluster whatever the
+/// agent says.
+pub(super) async fn update_source(
+    State(st): State<Shared>,
+    _: Admin,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let req: RenameRequest = match parse(&body) {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
+    let name = req.name.trim();
+    if name.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "give the source a name");
+    }
+    if name.chars().count() > NAME_MAX {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            &format!("a name has at most {NAME_MAX} characters"),
+        );
+    }
+    if id == "demo" {
+        return fail(
+            StatusCode::FORBIDDEN,
+            "the development fixture cannot be renamed",
+        );
+    }
+    let list = match st.db.sources.list_sources() {
+        Ok(l) => l,
+        Err(e) => return internal(e),
+    };
+    if !list.iter().any(|s| s.id == id) {
+        return fail(StatusCode::NOT_FOUND, "no such source");
+    }
+    if list
+        .iter()
+        .any(|s| s.id != id && s.name.trim().eq_ignore_ascii_case(name))
+    {
+        return fail(
+            StatusCode::CONFLICT,
+            "another source is already called that",
+        );
+    }
+    if let Err(e) = st.db.sources.rename_source(&id, name) {
+        return internal(e);
+    }
+    st.store.rename_cluster(&id, name);
+    st.store.publish(&json!({"type": "sources"}));
+    ok()
+}
+
 pub(super) async fn remove_source(
     State(st): State<Shared>,
     _: Admin,

@@ -23,6 +23,8 @@ export interface FakeHub {
   registry: RegistryView;
   /** when set, asking for a version change fails with this */
   upgradeError: string;
+  /** When set, renaming a source fails with this message (a name already taken). */
+  renameError: string;
   /** the communication log the fake hub holds (`entries` are the rows, `bodies` their content by id) */
   commLog: CommLogView;
   bodies: Record<number, unknown>;
@@ -45,6 +47,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     bodies: {},
     alerts: [],
     registry: { url: '', project: '', auth: 'none', username: '', hasSecret: false, linuxImage: 'hermes-agent-linux', windowsImage: 'hermes-agent-windows', implicit: false },
+    renameError: '',
     registryTest: { ok: true, message: 'connected', versions: ['1.0.1', '1.0.0'] },
     data: { nodes: [wireNode('c', 'cluster', null), wireNode('h', 'host', 'c'), wireNode('w', 'workload', 'h', { meta: { ns: 'default' } })], edges: [] },
     client: null as unknown as IHubClient,
@@ -68,6 +71,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     sources: {
       list: async () => { note('sources.list'); return hub.sources; },
       add: async (r) => { note(`sources.add:${r.name}`); note(`sources.flows:${r.flows === true}`); note(`sources.version:${r.version ?? ''}`); note(`sources.upgrades:${r.upgrades === true}`); return { id: 's1', name: r.name, type: r.type, endpoint: '', auth: '', state: 'pending', info: '', install: 'yaml', hint: 'apply it' }; },
+      rename: async (id, name) => { note(`sources.rename:${id}:${name}`); if (hub.renameError) throw new Error(hub.renameError); },
       remove: async (id) => note(`sources.remove:${id}`),
       upgrade: async (id, version) => { note(`sources.upgrade:${id}:${version}`); if (hub.upgradeError) throw new Error(hub.upgradeError); },
     },

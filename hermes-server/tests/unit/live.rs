@@ -379,3 +379,25 @@ fn keeping_one_contribution_drops_the_others_with_their_links() {
     s.keep_only_contribution("s", "h2"); // nothing else left: nothing changes
     assert_eq!(ids(&s), ["c", "b"]);
 }
+
+#[test]
+fn renaming_a_cluster_changes_only_the_cluster_of_that_source_and_says_so_once() {
+    let s = StoreImp::new();
+    s.set_topology(
+        "s",
+        vec![node("s", "cluster", None), node("h", "host", Some("s"))],
+        vec![],
+    );
+    s.set_topology("t", vec![node("t", "cluster", None)], vec![]);
+    let mut rx = s.subscribe();
+    s.rename_cluster("s", "new");
+    let names: Vec<String> = s.nodes().into_iter().map(|n| n.name).collect();
+    assert_eq!(
+        names,
+        ["new", "h", "t"],
+        "the host and the other source keep theirs"
+    );
+    assert_eq!(next(&mut rx)["type"], "snapshot");
+    s.rename_cluster("s", "new"); // nothing changes: nothing is sent
+    assert!(rx.try_recv().is_err());
+}

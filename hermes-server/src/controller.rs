@@ -109,7 +109,7 @@ pub fn routes(state: Shared) -> Router {
         )
         .route(
             "/api/sources/{id}",
-            delete(sources_controller::remove_source),
+            delete(sources_controller::remove_source).patch(sources_controller::update_source),
         )
         .route(
             "/api/sources/{id}/upgrade",
