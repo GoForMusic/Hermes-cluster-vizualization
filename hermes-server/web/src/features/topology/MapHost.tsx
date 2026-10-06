@@ -48,6 +48,7 @@ export const HostLabel = memo(function HostLabel({ box, host, stat, selected, on
  */
 export const HostGrip = memo(function HostGrip({ box, scale, onHold, onCols }: { box: HostBox; scale: number; onHold: () => void; onCols: (cols: number | null) => void }) {
   const start = (e: ReactPointerEvent<SVGGElement>) => {
+    if (e.button !== 0) return; // the middle button still moves the map
     e.stopPropagation(); // not a pan of the map
     e.preventDefault();
     onHold(); // the map stays where it is while the box changes size

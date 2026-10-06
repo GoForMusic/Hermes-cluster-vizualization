@@ -29,6 +29,8 @@ export interface PanZoom {
   wasDragged: () => boolean;
   /** Keep the map where it is: the person is changing something on it (a box's size), so it must not be fitted again by itself. */
   hold: () => void;
+  /** The opposite: let the map be fitted again by itself (after something that changed its layout on purpose, like a rearrangement). */
+  release: () => void;
   focus: (clusterId: string | null, animate?: boolean) => void;
   onPointerDown: (e: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (e: ReactPointerEvent<SVGSVGElement>) => void;
@@ -97,13 +99,17 @@ export function usePanZoom({ layout, focusId, interactive, inset, svgRef: given,
       setView({ k, x: px - (px - v.x) * (k / v.k), y: py - (py - v.y) * (k / v.k) });
     };
     const onDouble = () => focus(null);
+    const noAutoscroll = (e: MouseEvent) => { if (e.button === 1) e.preventDefault(); }; // the browser's own middle-click scrolling
     svg.addEventListener('wheel', onWheel, { passive: false }); // it must be allowed to stop the page from scrolling
     svg.addEventListener('dblclick', onDouble);
-    return () => { svg.removeEventListener('wheel', onWheel); svg.removeEventListener('dblclick', onDouble); };
+    svg.addEventListener('mousedown', noAutoscroll);
+    return () => { svg.removeEventListener('wheel', onWheel); svg.removeEventListener('dblclick', onDouble); svg.removeEventListener('mousedown', noAutoscroll); };
   }, [interactive, focus, maxFit]);
 
+  // The middle button moves the map from anywhere, over the boxes too. The left button does it only from the empty background: on a
+  // cluster's title band or a host's corner it drags that instead (they stop the event), so aiming at them never moves the map.
   const onPointerDown = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
-    if (!interactive) return;
+    if (!interactive || (e.button !== 0 && e.button !== 1)) return;
     const start = { x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y };
     dragged.current = 0;
     const move = (ev: PointerEvent) => {
@@ -132,5 +138,5 @@ export function usePanZoom({ layout, focusId, interactive, inset, svgRef: given,
     onCursor(gridRef((e.clientX - r.left - v.x) / v.k, (e.clientY - r.top - v.y) / v.k), v.k);
   }, [onCursor]);
 
-  return { svgRef, view, animate, panning, wasDragged: () => dragged.current >= 4, hold: () => { moved.current = true; }, focus, onPointerDown, onPointerMove };
+  return { svgRef, view, animate, panning, wasDragged: () => dragged.current >= 4, hold: () => { moved.current = true; }, release: () => { moved.current = false; }, focus, onPointerDown, onPointerMove };
 }

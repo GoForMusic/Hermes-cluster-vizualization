@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeLinks, gridRef } from '../domain/map/links';
 import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutToFit, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
 import { Router } from '../domain/map/router';
-import { dropSide, moveTo, orderClusters } from '../domain/map/order';
+import { arrange, dropSide, rowsOf } from '../domain/map/order';
 import { reduce } from '../domain/reducer';
 import { NOW, wireEdge, wireNode, world } from './fixtures';
 import { parseEdge } from '../domain/model';
@@ -297,28 +297,45 @@ describe('arranging the clusters for the screen', () => {
   });
 });
 
-describe('the order of the clusters', () => {
-  const items = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+describe('arranging the clusters by hand', () => {
+  const box = (id: string, x: number, y: number) => ({ id, x, y, w: 100, h: 50 });
 
-  it('is the order of the sources until a person gives one, and a new source comes last', () => {
-    expect(orderClusters(items, []).map((c) => c.id)).toEqual(['a', 'b', 'c', 'd']);
-    expect(orderClusters(items, ['c', 'a']).map((c) => c.id)).toEqual(['c', 'a', 'b', 'd']);
-    expect(orderClusters(items, ['gone', 'd']).map((c) => c.id)).toEqual(['d', 'a', 'b', 'c']); // a source that was removed is not missed
+  it('reads the lines the clusters are on from where they are drawn', () => {
+    expect(rowsOf([box('c', 0, 100), box('b', 150, 0), box('a', 0, 0)])).toEqual([['a', 'b'], ['c']]);
   });
 
-  it('puts a dragged cluster just before or just after the one it was dropped on', () => {
-    expect(moveTo(['a', 'b', 'c', 'd'], 'd', 'b')).toEqual(['a', 'd', 'b', 'c']);
-    expect(moveTo(['a', 'b', 'c', 'd'], 'a', 'c')).toEqual(['b', 'a', 'c', 'd']);
-    expect(moveTo(['a', 'b', 'c', 'd'], 'a', 'c', true)).toEqual(['b', 'c', 'a', 'd']);
-    expect(moveTo(['a', 'b', 'c', 'd'], 'a', 'a')).toEqual(['a', 'b', 'c', 'd']);
-    expect(moveTo(['a', 'b'], 'x', 'a')).toEqual(['a', 'b']);
+  it('puts a cluster on the line of the one it is dropped on, left or right of it, or on a line of its own above or below it', () => {
+    const rows = [['a', 'b'], ['c']];
+    expect(arrange(rows, 'c', 'b', 'r')).toEqual([['a', 'b', 'c']]); // the line it left is gone
+    expect(arrange(rows, 'c', 'a', 'l')).toEqual([['c', 'a', 'b']]);
+    expect(arrange(rows, 'a', 'c', 'b')).toEqual([['b'], ['c'], ['a']]);
+    expect(arrange(rows, 'c', 'a', 't')).toEqual([['c'], ['a', 'b']]);
+    expect(arrange(rows, 'a', 'a', 'r')).toEqual(rows);
+    expect(arrange(rows, 'x', 'a', 'r')).toEqual(rows);
   });
 
   it('says which side of a cluster a drop is on from where the pointer is in it', () => {
-    const box = { x: 100, y: 100, w: 400, h: 200 };
-    expect(dropSide(box, 450, 200)).toBe('r');
-    expect(dropSide(box, 150, 200)).toBe('l');
-    expect(dropSide(box, 300, 290)).toBe('b');
-    expect(dropSide(box, 300, 110)).toBe('t');
+    const b = { x: 100, y: 100, w: 400, h: 200 };
+    expect(dropSide(b, 450, 200)).toBe('r');
+    expect(dropSide(b, 150, 200)).toBe('l');
+    expect(dropSide(b, 300, 290)).toBe('b');
+    expect(dropSide(b, 300, 110)).toBe('t');
+  });
+
+  const three = ['a', 'b', 'c'].map((id) => ({
+    id, networks: [], hasControl: false,
+    hosts: [{ id: `h${id}`, items: ['x', 'y', 'z', 'w', 'v', 'u'].map((i) => ({ id: `${id}${i}`, volume: false })) }],
+  }));
+
+  it('keeps the lines a person chose, whatever the screen: all three on one line, though the auto layout would wrap them', () => {
+    expect(new Set(layoutTopology(three, new Map(), 700).clusters.map((c) => c.y)).size).toBeGreaterThan(1); // wraps by itself
+    const one = layoutToFit(three, new Map(), { w: 800, h: 2000 }, [['a', 'b', 'c']]);
+    expect(new Set(one.clusters.map((c) => c.y)).size).toBe(1);
+    expect(one.clusters.map((c) => c.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('puts a source nobody placed yet on a line of its own at the end, and forgets ids that are gone', () => {
+    const l = layoutToFit(three, new Map(), null, [['b', 'gone'], ['a']]);
+    expect(rowsOf(l.clusters)).toEqual([['b'], ['a'], ['c']]);
   });
 });
