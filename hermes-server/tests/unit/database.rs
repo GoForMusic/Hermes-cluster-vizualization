@@ -216,7 +216,6 @@ fn uptime_bars_show_the_worst_status_and_the_share_that_was_not_down() {
 #[test]
 fn the_registry_secret_is_stored_encrypted_and_read_back_whole() {
     let db = Repositories::sqlite_in_memory().unwrap();
-    assert!(!db.registry.get_registry().is_set());
     let config = crate::model::RegistryConfig {
         url: "git.example.com".into(),
         project: "acm".into(),
@@ -283,4 +282,25 @@ fn who_acknowledged_an_alert_and_when_survives_a_restart() {
         (back.ack, back.ack_by.as_str(), back.ack_ts),
         (true, "admin", Some(77))
     );
+}
+
+#[test]
+fn a_hub_never_told_a_registry_offers_the_projects_own_and_one_cleared_on_purpose_stays_cleared() {
+    let db = Repositories::sqlite_in_memory().unwrap();
+    let default = db.registry.get_registry();
+    assert!(default.is_set() && default.implicit);
+    assert_eq!(
+        default.image(default.linux_repo()),
+        "ghcr.io/goformusic/hermes-agent-linux"
+    );
+    assert_eq!(default.auth, "none", "public: nothing to log in with");
+
+    // what an admin saves is theirs, not the default, even when it is the same registry
+    db.registry.set_registry(&default).unwrap();
+    assert!(!db.registry.get_registry().implicit);
+
+    db.registry
+        .set_registry(&crate::model::RegistryConfig::default())
+        .unwrap();
+    assert!(!db.registry.get_registry().is_set(), "the admin chose none");
 }

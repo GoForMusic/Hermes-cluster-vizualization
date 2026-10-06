@@ -12,7 +12,7 @@ use crate::model::RegistryConfig;
 const KEY: &str = "registry";
 
 pub trait IRegistryDAO: Send + Sync {
-    /// Nothing stored yet gives the empty config (`is_set()` false).
+    /// Nothing stored yet gives the project's own public registry (`RegistryConfig::project_default`); one cleared on purpose is stored empty (`is_set()` false).
     fn get_registry(&self) -> RegistryConfig;
     fn set_registry(&self, config: &RegistryConfig) -> Result<()>;
 }
@@ -34,7 +34,7 @@ impl RegistryDAOImp {
 impl IRegistryDAO for RegistryDAOImp {
     fn get_registry(&self) -> RegistryConfig {
         let Some(raw) = self.settings.get_setting(KEY) else {
-            return RegistryConfig::default();
+            return RegistryConfig::project_default();
         };
         let mut config: RegistryConfig = serde_json::from_str(&raw).unwrap_or_default();
         match crypto::decrypt(self.ctx.key(), &config.secret) {

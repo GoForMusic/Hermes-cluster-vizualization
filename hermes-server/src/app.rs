@@ -60,7 +60,7 @@ impl AppState {
     /// setting names. An agent below it is `outdated`.
     pub async fn latest_agent(&self) -> Option<semver::Version> {
         let registry = self.db.registry.get_registry();
-        if !registry.is_set() {
+        if !registry.is_set() || registry.implicit {
             return self.expected_agent.clone();
         }
         let fresh = |slot: &Option<(std::time::Instant, Option<semver::Version>)>| {

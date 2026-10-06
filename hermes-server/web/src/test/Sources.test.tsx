@@ -151,6 +151,18 @@ describe('changing the agent version', () => {
     expect(screen.getByText('the node agents did not come up')).toBeInTheDocument();
   });
 
+  it('adds a source with no version when the registry is only the default one and its versions cannot be listed', async () => {
+    const rig = await renderWithHub(<Sources />, { prepare: (h) => { h.registry = { ...h.registry, url: 'ghcr.io', implicit: true }; h.registryTest = { ok: false, message: 'cannot reach ghcr.io', versions: [] }; } });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '+ Add source' }));
+    expect(await screen.findByText(/uses the image this hub was started with/)).toBeInTheDocument();
+    const dialog = screen.getAllByRole('dialog', { hidden: true })[0]!;
+    await user.type(within(dialog).getByLabelText('Name'), 'offline-lab');
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(rig.hub.calls).toContain('sources.add:offline-lab'));
+    expect(rig.hub.calls).toContain('sources.version:');
+  });
+
   it('asks in Add source whether the agent may upgrade itself, on by default', async () => {
     const { hub } = await renderWithHub(<Sources />);
     const user = userEvent.setup();

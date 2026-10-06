@@ -51,7 +51,8 @@ export const shapeSignature = (shape: readonly ShapeCluster[]): string =>
 export interface Placed { id: string; x: number; y: number }
 /** A network plate. `trunk` is the x of the line that leaves it down to its bus, `bus` the y of that bus. */
 export interface NetworkPlaced extends Placed { trunk: number; bus: number }
-export interface HostBox { id: string; x: number; y: number; w: number; h: number; items: Placed[] }
+/** `cols` is how many columns its workloads are laid out in: what the person's resize changes. */
+export interface HostBox { id: string; x: number; y: number; w: number; h: number; cols: number; items: Placed[] }
 export interface ClusterBox { id: string; x: number; y: number; w: number; h: number; hosts: HostBox[]; networks: NetworkPlaced[] }
 export interface Layout {
   clusters: ClusterBox[];
@@ -62,12 +63,19 @@ export interface Layout {
   h: number;
 }
 
-export function layoutTopology(shape: readonly ShapeCluster[]): Layout {
+/** The most columns a host can be stretched to. */
+export const MAX_COLS = 8;
+/** How many columns a host of `n` items gets by itself. */
+export const autoCols = (n: number): number => (n <= 2 ? Math.max(n, 1) : n <= 4 ? 2 : 3);
+
+/** `colsOf` holds the columns a person chose for some hosts (by id); the others are laid out by `autoCols`. */
+export function layoutTopology(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number> = new Map()): Layout {
   interface Prepared { host: ShapeHost; cols: number; rows: number; w: number }
   const boxes = shape.map((c) => {
     const prepared: Prepared[] = c.hosts.map((host) => {
       const n = host.items.length;
-      const cols = n <= 2 ? Math.max(n, 1) : n <= 4 ? 2 : 3;
+      const chosen = colsOf.get(host.id);
+      const cols = chosen ? Math.min(Math.max(Math.round(chosen), 1), Math.min(MAX_COLS, Math.max(n, 1))) : autoCols(n);
       return { host, cols, rows: Math.max(1, Math.ceil(n / cols)), w: Math.max(244, cols * CELL_W + 2 * HOST_PAD) };
     });
     // a cluster that reported nothing (its agent is gone) has no hosts to draw: just its header
@@ -90,7 +98,7 @@ export function layoutTopology(shape: readonly ShapeCluster[]): Layout {
     const hosts: HostBox[] = prepared.map((p) => {
       const ox = (p.w - p.cols * CELL_W) / 2;
       const box: HostBox = {
-        id: p.host.id, x, y: CL_HEAD + bandH, w: p.w, h: hostH,
+        id: p.host.id, x, y: CL_HEAD + bandH, w: p.w, h: hostH, cols: p.cols,
         items: p.host.items.map((it, i) => ({ id: it.id, x: ox + (i % p.cols) * CELL_W + CELL_W / 2, y: HOST_HEAD + Math.floor(i / p.cols) * CELL_H + 34 })),
       };
       x += p.w + HOST_GAP;

@@ -137,7 +137,8 @@ fn agent_images(
     req: &AddSourceRequest,
 ) -> Result<AgentImages, Response> {
     let settings = &st.settings;
-    if !registry.is_set() {
+    // the project's own registry was never chosen by anyone: without a version it is as if there were none
+    if !registry.is_set() || (registry.implicit && req.version.trim().is_empty()) {
         return Ok(AgentImages {
             linux: settings.agent_image.clone(),
             windows: settings.agent_image_windows.clone(),
@@ -167,7 +168,7 @@ fn agent_images(
         linux: format!("{}:{version}", registry.image(registry.linux_repo())),
         windows,
         pull_secret: if basic && kubernetes {
-            "infraviz-registry".into()
+            "hermes-registry".into()
         } else {
             String::new()
         },
@@ -268,7 +269,7 @@ pub(super) async fn upgrade_source(
     }
     // with a registry set up, only what it really holds can be chosen: a typo would leave the cluster unable to pull the image
     let registry = st.db.registry.get_registry();
-    if registry.is_set() {
+    if registry.is_set() && !registry.implicit {
         match st.registry.tags(&registry, registry.linux_repo()).await {
             Ok(tags) if tags.iter().any(|t| t == version) => {}
             Ok(_) => {

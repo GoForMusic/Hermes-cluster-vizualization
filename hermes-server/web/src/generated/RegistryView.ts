@@ -3,4 +3,8 @@
 /**
  * What the browser sees of the registry settings.
  */
-export type RegistryView = { url: string, project: string, auth: string, username: string, hasSecret: boolean, linuxImage: string, windowsImage: string, };
+export type RegistryView = { url: string, project: string, auth: string, username: string, hasSecret: boolean, linuxImage: string, windowsImage: string, 
+/**
+ * The project's own registry, offered because none was set up: the version in Add source is optional then.
+ */
+implicit: boolean, };

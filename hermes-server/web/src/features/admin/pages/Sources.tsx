@@ -181,12 +181,13 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
   const registry = useRegistryVersions(open);
   const chosen = type || types[0] || '';
   const kubernetes = chosen.startsWith('Kubernetes');
+  const docker = chosen === 'Docker (agent)'; // machines of their own: no swarm, no upgrade from the dashboard yet
 
   const { busy, error, submit } = useAsyncSubmit(async () => {
-    if (registry.configured && !(version || registry.versions[0])) throw new Error('The registry has no agent version to install yet: push the agent image there first.');
+    if (registry.configured && !registry.implicit && !(version || registry.versions[0])) throw new Error('The registry has no agent version to install yet: push the agent image there first.');
     const added = await store.addSource({
-      name, type: chosen, endpoint: '', hubUrl, flows: kubernetes && flows, upgrades,
-      version: registry.configured ? version || registry.versions[0]! : '', windows: registry.configured && !kubernetes && windows,
+      name, type: chosen, endpoint: '', hubUrl, flows: kubernetes && flows, upgrades: upgrades && !docker,
+      version: registry.configured ? version || registry.versions[0] || '' : '', windows: registry.configured && !kubernetes && windows,
     });
     setName('');
     onAdded(added);
@@ -199,25 +200,25 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
         <div className="form">
           <label className="f">Name<input type="text" placeholder="e.g. lab-k3s" value={name} onChange={(e) => setName(e.target.value)} /></label>
           <label className="f">Type<select value={chosen} onChange={(e) => setType(e.target.value)}>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
-          <label className="f">Hub address as seen from the cluster<input type="text" value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} /></label>
+          <label className="f">Hub address as seen from the agent<input type="text" value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} /></label>
           {registry.configured ? (
             <>
               <label className="f">Agent version
                 <select value={version || registry.versions[0] || ''} onChange={(e) => setVersion(e.target.value)} disabled={!registry.versions.length}>
                   {registry.versions.length ? registry.versions.map((v, i) => <option key={v} value={v}>{v}{i === 0 ? ' (newest)' : ''}</option>) : <option value="">none found in the registry</option>}
                 </select>
-                <span className="muted" style={{ fontSize: 11.5 }}>{registry.message}</span>
+                <span className="muted" style={{ fontSize: 11.5 }}>{registry.message}{registry.implicit && !registry.versions.length ? ' Without a version the file uses the image this hub was started with.' : ''}</span>
               </label>
               {kubernetes ? null : (
                 <label className="check">
                   <input type="checkbox" checked={windows} onChange={(e) => setWindows(e.target.checked)} />
-                  <span><b>The cluster has Windows nodes</b><span className="muted">Adds the Windows agent to the stack ({version || registry.versions[0] || 'version'}-ltsc2022).</span></span>
+                  <span><b>{docker ? 'Some machines run Windows' : 'The cluster has Windows nodes'}</b><span className="muted">Adds the Windows agent to the {docker ? 'compose file' : 'stack'} ({version || registry.versions[0] || 'version'}-ltsc2022).</span></span>
                 </label>
               )}
             </>
           ) : <div className="help" style={{ margin: 0 }}>No registry is set up: the manifest uses the image the hub was started with. Set one up in Settings → Registry to choose versions.</div>}
           <div className="help" style={{ margin: 0 }}>The agent connects OUT to this address (gRPC, the same port as this page). It must not be localhost.</div>
-          <label className="check">
+          {docker ? null : <label className="check">
             <input type="checkbox" checked={upgrades} onChange={(e) => setUpgrades(e.target.checked)} />
             <span>
               <b>Allow upgrades from the dashboard</b>
@@ -225,7 +226,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
                 Lets the agent change its own image when you pick a version (Change agent version). {kubernetes ? 'It gets the right to read and patch only its own Deployment and DaemonSet.' : 'It uses the Docker socket it already has.'} Untick to keep it strictly read-only: you then update it by applying a new manifest.
               </span>
             </span>
-          </label>
+          </label>}
           {kubernetes ? (
             <label className="check">
               <input type="checkbox" checked={flows} onChange={(e) => setFlows(e.target.checked)} />
@@ -250,19 +251,19 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
 }
 
 /** Whether a registry is set up, and the agent versions in it: what the Add dialog offers. Looked up each time the dialog opens. */
-function useRegistryVersions(open: boolean): { configured: boolean; versions: string[]; message: string } {
+function useRegistryVersions(open: boolean): { configured: boolean; implicit: boolean; versions: string[]; message: string } {
   const client = useClient();
-  const [state, setState] = useState({ configured: false, versions: [] as string[], message: '' });
+  const [state, setState] = useState({ configured: false, implicit: false, versions: [] as string[], message: '' });
   useEffect(() => {
     if (!open) return;
     let live = true;
     void (async () => {
       try {
         const saved = await client.registry.get();
-        if (!saved.url) { if (live) setState({ configured: false, versions: [], message: '' }); return; }
+        if (!saved.url) { if (live) setState({ configured: false, implicit: false, versions: [], message: '' }); return; }
         const found: RegistryTest = await client.registry.versions().catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e), versions: [] }));
-        if (live) setState({ configured: true, versions: found.ok ? found.versions : [], message: found.message });
-      } catch { if (live) setState({ configured: false, versions: [], message: '' }); }
+        if (live) setState({ configured: true, implicit: saved.implicit, versions: found.ok ? found.versions : [], message: found.message });
+      } catch { if (live) setState({ configured: false, implicit: false, versions: [], message: '' }); }
     })();
     return () => { live = false; };
   }, [client, open]);
