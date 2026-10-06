@@ -103,10 +103,14 @@ impl Rig {
 
     /// Adds an agent source the way the admin page does; returns its id and token.
     async fn add_source(&self, kind: &str) -> (String, String) {
+        self.add_source_named(kind, "lab").await
+    }
+
+    async fn add_source_named(&self, kind: &str, name: &str) -> (String, String) {
         let r = self
             .post(
                 "/api/sources",
-                json!({"name": "lab", "type": kind, "hubUrl": self.base}),
+                json!({"name": name, "type": kind, "hubUrl": self.base}),
             )
             .await;
         assert_eq!(r.status(), StatusCode::CREATED);
@@ -996,8 +1000,8 @@ async fn the_communication_log_is_for_a_logged_in_admin_only() {
 async fn a_source_is_renamed_without_touching_its_token_and_a_name_in_use_is_refused() {
     let rig = Rig::start().await;
     rig.setup_admin(false).await;
-    let (first, _) = rig.add_source("Docker (agent)").await;
-    let (second, _) = rig.add_source("Docker (agent)").await; // both are called "lab": the mistake this is for
+    let (first, _) = rig.add_source_named("Docker (agent)", "lab-dockr").await; // a typo
+    let (second, _) = rig.add_source_named("Docker (agent)", "lab-b").await;
 
     let path = |id: &str| format!("/api/sources/{id}");
     let ok = rig
@@ -1060,4 +1064,33 @@ async fn a_source_is_renamed_without_touching_its_token_and_a_name_in_use_is_ref
         StatusCode::OK,
         "keeping its own name is not a conflict"
     );
+}
+
+#[tokio::test]
+async fn a_second_source_with_the_name_of_another_is_refused_in_any_case() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    rig.add_source_named("Docker (agent)", "runner-2").await;
+    for name in ["runner-2", " RUNNER-2 "] {
+        let r = rig
+            .post(
+                "/api/sources",
+                json!({"name": name, "type": "Docker (agent)", "hubUrl": rig.base}),
+            )
+            .await;
+        assert_eq!(r.status(), StatusCode::CONFLICT, "{name:?}");
+    }
+    let listed: Value = rig.get("/api/sources").await.json().await.unwrap();
+    assert_eq!(
+        listed.as_array().unwrap().len(),
+        1,
+        "nothing was created by the refused ones"
+    );
+    let other = rig
+        .post(
+            "/api/sources",
+            json!({"name": "runner-3", "type": "Docker (agent)", "hubUrl": rig.base}),
+        )
+        .await;
+    assert_eq!(other.status(), StatusCode::CREATED);
 }

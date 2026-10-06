@@ -189,6 +189,21 @@ pub(super) async fn add_source(State(st): State<Shared>, _: Admin, body: Bytes) 
     if let Err(r) = validate_add_source(&req) {
         return r;
     }
+    // two sources with the same name cannot be told apart on the map or in the alerts
+    match st.db.sources.list_sources() {
+        Ok(list)
+            if list
+                .iter()
+                .any(|s| s.name.trim().eq_ignore_ascii_case(req.name.trim())) =>
+        {
+            return fail(
+                StatusCode::CONFLICT,
+                "another source is already called that",
+            );
+        }
+        Err(e) => return internal(e),
+        Ok(_) => {}
+    }
 
     let source = new_source(&req);
     let hub_url = req.hub_url.trim().trim_end_matches('/');
