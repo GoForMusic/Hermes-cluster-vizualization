@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeLinks, gridRef } from '../domain/map/links';
-import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
+import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutToFit, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
 import { Router } from '../domain/map/router';
 import { reduce } from '../domain/reducer';
 import { NOW, wireEdge, wireNode, world } from './fixtures';
@@ -266,5 +266,32 @@ describe('resizing a host box', () => {
     expect(layoutTopology(eight(), new Map([['h', 99]])).hosts.get('h')!.cols).toBe(Math.min(MAX_COLS, 8));
     expect(layoutTopology(eight(), new Map([['h', 0]])).hosts.get('h')!.cols).toBe(autoCols(8)); // 0 is no choice
     expect(layoutTopology(eight(), new Map([['h', -3]])).hosts.get('h')!.cols).toBe(1);
+  });
+});
+
+describe('arranging the clusters for the screen', () => {
+  const six = Array.from({ length: 6 }, (_, i) => ({
+    id: `c${i}`, networks: [], hasControl: false,
+    hosts: [{ id: `h${i}`, items: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id: `${i}${id}`, volume: false })) }],
+  }));
+
+  it('puts the clusters in wide rows on a landscape screen and in a column on a portrait one', () => {
+    const wide = layoutToFit(six, new Map(), { w: 3600, h: 900 });
+    const tall = layoutToFit(six, new Map(), { w: 900, h: 3600 });
+    expect(wide.w / wide.h).toBeGreaterThan(tall.w / tall.h);
+    expect(wide.w).toBeGreaterThan(tall.w);
+  });
+
+  it('shows the map larger than the fixed row width does on a wide screen', () => {
+    const view = { w: 3600, h: 900 };
+    const fixed = layoutTopology(six);
+    const fit = layoutToFit(six, new Map(), view);
+    const scale = (l: { w: number; h: number }) => Math.min(view.w / l.w, view.h / l.h);
+    expect(scale(fit)).toBeGreaterThan(scale(fixed));
+  });
+
+  it('is the plain layout when the size of the screen is not known', () => {
+    expect(layoutToFit(six, new Map(), null)).toEqual(layoutTopology(six));
+    expect(layoutToFit(six, new Map(), { w: 0, h: 0 })).toEqual(layoutTopology(six));
   });
 });

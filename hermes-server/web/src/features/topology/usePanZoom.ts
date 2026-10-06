@@ -13,6 +13,8 @@ interface Options {
   focusId: string | null;
   interactive: boolean;
   inset?: Inset;
+  /** The element to fit and zoom, when the caller needs it too (to know the size of the screen). */
+  svgRef?: RefObject<SVGSVGElement | null>;
   /** How far fitting may enlarge the map: a TV shows one small cluster on a big screen and wants it to fill it. */
   maxFit?: number;
   onCursor?: (ref: string, zoom: number) => void;
@@ -35,8 +37,9 @@ export interface PanZoom {
 const MARGIN = 28;
 const DEFAULT_MAX_FIT = 1.7;
 
-export function usePanZoom({ layout, focusId, interactive, inset, maxFit = DEFAULT_MAX_FIT, onCursor }: Options): PanZoom {
-  const svgRef = useRef<SVGSVGElement>(null);
+export function usePanZoom({ layout, focusId, interactive, inset, svgRef: given, maxFit = DEFAULT_MAX_FIT, onCursor }: Options): PanZoom {
+  const ownRef = useRef<SVGSVGElement>(null);
+  const svgRef = given ?? ownRef;
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const [animate, setAnimate] = useState(false);
   const [panning, setPanning] = useState(false);

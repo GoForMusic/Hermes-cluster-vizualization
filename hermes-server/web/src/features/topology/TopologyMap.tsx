@@ -2,8 +2,8 @@
 // state), a coordinate grid and traffic links. The layout and the link routes depend on the SHAPE of the topology only, so they are computed
 // again when it changes and not on every sample; the numbers on it come straight from the state. Orchestration only: the grid, the individual
 // box/node/link symbols each live in their own file (`Grid`, `MapHost`, `MapNode`, `MapLink`).
-import { useId, useMemo, type MouseEvent } from 'react';
-import { CL_HEAD, CL_PAD, MAX_NETWORKS, layoutTopology, moreId, shapeSignature, topologyShape, type ClusterBox, type Layout } from '../../domain/map/layout';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { CL_HEAD, CL_PAD, MAX_NETWORKS, layoutToFit, moreId, shapeSignature, topologyShape, type ClusterBox, type Layout } from '../../domain/map/layout';
 import { computeLinks } from '../../domain/map/links';
 import { networkTags } from '../../domain/map/networks';
 import { clusterStat, clusterSubtitle, hostStat, nodeTooltip } from '../../domain/mapLabels';
@@ -41,14 +41,29 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
   // the signature says when the shape changed: the layout is not computed again for a new sample
   const hostCols = useHostCols();
   const colsSig = [...hostCols.cols].map(([id, n]) => `${id}=${n}`).join(',');
-  const layout = useMemo(() => layoutTopology(shape, hostCols.cols), [sig, colsSig]);
+  // the size of the screen decides how the clusters are arranged: rows as wide as the screen, not a fixed width
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = svgRef.current?.parentElement;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      const w = Math.round(r.width / 50) * 50, h = Math.round(r.height / 50) * 50; // not a new layout for every pixel of a resize
+      setSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const room = size && { w: size.w, h: size.h - (inset?.top ?? 0) - (inset?.bottom ?? 0) };
+  const layout = useMemo(() => layoutToFit(shape, hostCols.cols, room), [sig, colsSig, room?.w, room?.h]);
   const edges = [...state.edges, ...mountLinks(state)]; // a volume is joined to the workloads that mount it
   const edgeSig = edges.map((e) => `${e.id}${e.type}${e.from}${e.to}`).join('|');
   // routing the links is the expensive part: it is redone only when the shape or the links themselves change
   const links = useMemo(() => new Map(computeLinks(layout, edges).map((l) => [l.edgeId, l])), [layout, edgeSig]);
 
   const tags = networkTags(state);
-  const zoom = usePanZoom({ layout, focusId, interactive, inset, maxFit, onCursor });
+  const zoom = usePanZoom({ layout, focusId, interactive, inset, svgRef, maxFit, onCursor });
 
   const related = new Set<string>();
   if (selectedId) {

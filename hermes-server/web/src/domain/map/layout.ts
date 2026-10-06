@@ -69,7 +69,7 @@ export const MAX_COLS = 8;
 export const autoCols = (n: number): number => (n <= 2 ? Math.max(n, 1) : n <= 4 ? 2 : 3);
 
 /** `colsOf` holds the columns a person chose for some hosts (by id); the others are laid out by `autoCols`. */
-export function layoutTopology(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number> = new Map()): Layout {
+export function layoutTopology(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number> = new Map(), maxRowW: number = MAX_ROW_W): Layout {
   interface Prepared { host: ShapeHost; cols: number; rows: number; w: number }
   const boxes = shape.map((c) => {
     const prepared: Prepared[] = c.hosts.map((host) => {
@@ -110,7 +110,7 @@ export function layoutTopology(shape: readonly ShapeCluster[], colsOf: ReadonlyM
   // clusters flow left to right and wrap into rows
   let x = 0, y = 0, rowH = 0, maxX = 0;
   for (const b of boxes) {
-    if (x > 0 && x + b.w > MAX_ROW_W) { x = 0; y += rowH + CL_GAP; rowH = 0; }
+    if (x > 0 && x + b.w > maxRowW) { x = 0; y += rowH + CL_GAP; rowH = 0; }
     b.x = x;
     b.y = y;
     x += b.w + CL_GAP;
@@ -140,3 +140,22 @@ export function layoutTopology(shape: readonly ShapeCluster[], colsOf: ReadonlyM
 
 /** Is any workload, volume or network of this state drawn? (used to know when the map must be laid out again) */
 export const drawnCount = (s: HubState): number => [...s.nodes.values()].filter((n) => (n.kind === 'workload' || n.kind === 'volume' || n.kind === 'network') && isShown(s, n)).length;
+
+/** The widths clusters may fill before wrapping into the next row, tried by `layoutToFit`. */
+export const ROW_WIDTHS = [900, 1200, 1500, 2000, 2600, 3400, 4400, 6000];
+
+/**
+ * The layout that fills a screen best. Clusters flow into rows; how wide a row may be decides the shape of the whole map, and a map as
+ * tall and narrow as a column of boxes leaves the sides of a landscape screen empty. So each row width is tried and the one that lets the
+ * map be shown largest in `view` (the size of the screen, in pixels) wins. Without a size it is the plain layout.
+ */
+export function layoutToFit(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, view: { w: number; h: number } | null): Layout {
+  if (!view || view.w <= 0 || view.h <= 0) return layoutTopology(shape, colsOf);
+  let best = layoutTopology(shape, colsOf, ROW_WIDTHS[0]), bestK = -1;
+  for (const width of ROW_WIDTHS) {
+    const l = width === ROW_WIDTHS[0] ? best : layoutTopology(shape, colsOf, width);
+    const k = Math.min(view.w / Math.max(l.w, 1), view.h / Math.max(l.h, 1));
+    if (k > bestK + 1e-6) { best = l; bestK = k; }
+  }
+  return best;
+}
