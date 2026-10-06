@@ -304,3 +304,22 @@ fn a_hub_never_told_a_registry_offers_the_projects_own_and_one_cleared_on_purpos
         .unwrap();
     assert!(!db.registry.get_registry().is_set(), "the admin chose none");
 }
+
+#[test]
+fn renaming_a_source_changes_only_its_name() {
+    let db = Repositories::sqlite_in_memory().unwrap();
+    let s = crate::model::Source {
+        id: "s1".into(),
+        name: "wrong".into(),
+        kind: "Docker (agent)".into(),
+        secret: "tok".into(),
+        ..Default::default()
+    };
+    db.sources.insert_source(&s).unwrap();
+    db.sources.rename_source("s1", "right").unwrap();
+    let got = db.sources.list_sources().unwrap().remove(0);
+    assert_eq!(
+        (got.name.as_str(), got.id.as_str(), got.secret.as_str()),
+        ("right", "s1", "tok")
+    );
+}

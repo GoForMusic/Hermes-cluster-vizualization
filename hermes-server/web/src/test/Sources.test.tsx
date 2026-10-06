@@ -58,6 +58,35 @@ describe('the sources page', () => {
     expect(hub.calls).toContain('sources.remove:s1');
   });
 
+  it('renames a source from its card without removing it: only the name is sent', async () => {
+    const rig = await renderWithHub(<Sources />);
+    rig.hub.sources = [source({ name: 'lab-dockr' })];
+    await act(async () => { await rig.store.refreshSources(); });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const dialog = screen.getByRole('heading', { name: 'Edit lab-dockr', hidden: true }).closest('dialog')!;
+    const save = within(dialog).getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled(); // the name is as it was
+    const field = within(dialog).getByLabelText('Name');
+    await user.clear(field);
+    await user.type(field, '  lab-docker  ');
+    await user.click(save);
+    await waitFor(() => expect(rig.hub.calls).toContain('sources.rename:s1:lab-docker'));
+    expect(rig.hub.calls.some((c) => c.startsWith('sources.remove'))).toBe(false);
+  });
+
+  it('says why a name is refused and leaves the dialog open', async () => {
+    const rig = await renderWithHub(<Sources />, { prepare: (h) => { h.renameError = 'another source is already called that'; } });
+    rig.hub.sources = [source({ name: 'lab-dockr' })];
+    await act(async () => { await rig.store.refreshSources(); });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const dialog = screen.getByRole('heading', { name: 'Edit lab-dockr', hidden: true }).closest('dialog')!;
+    await user.type(within(dialog).getByLabelText('Name'), '2');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await within(dialog).findByText('another source is already called that')).toBeInTheDocument();
+  });
+
   it('adds a source and shows the manifest that installs its agent', async () => {
     const { hub } = await renderWithHub(<Sources />);
     const user = userEvent.setup();

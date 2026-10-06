@@ -13,6 +13,8 @@ interface Options {
   focusId: string | null;
   interactive: boolean;
   inset?: Inset;
+  /** The element to fit and zoom, when the caller needs it too (to know the size of the screen). */
+  svgRef?: RefObject<SVGSVGElement | null>;
   /** How far fitting may enlarge the map: a TV shows one small cluster on a big screen and wants it to fill it. */
   maxFit?: number;
   onCursor?: (ref: string, zoom: number) => void;
@@ -27,6 +29,8 @@ export interface PanZoom {
   wasDragged: () => boolean;
   /** Keep the map where it is: the person is changing something on it (a box's size), so it must not be fitted again by itself. */
   hold: () => void;
+  /** The opposite: let the map be fitted again by itself (after something that changed its layout on purpose, like a rearrangement). */
+  release: () => void;
   focus: (clusterId: string | null, animate?: boolean) => void;
   onPointerDown: (e: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (e: ReactPointerEvent<SVGSVGElement>) => void;
@@ -35,8 +39,9 @@ export interface PanZoom {
 const MARGIN = 28;
 const DEFAULT_MAX_FIT = 1.7;
 
-export function usePanZoom({ layout, focusId, interactive, inset, maxFit = DEFAULT_MAX_FIT, onCursor }: Options): PanZoom {
-  const svgRef = useRef<SVGSVGElement>(null);
+export function usePanZoom({ layout, focusId, interactive, inset, svgRef: given, maxFit = DEFAULT_MAX_FIT, onCursor }: Options): PanZoom {
+  const ownRef = useRef<SVGSVGElement>(null);
+  const svgRef = given ?? ownRef;
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const [animate, setAnimate] = useState(false);
   const [panning, setPanning] = useState(false);
@@ -94,13 +99,17 @@ export function usePanZoom({ layout, focusId, interactive, inset, maxFit = DEFAU
       setView({ k, x: px - (px - v.x) * (k / v.k), y: py - (py - v.y) * (k / v.k) });
     };
     const onDouble = () => focus(null);
+    const noAutoscroll = (e: MouseEvent) => { if (e.button === 1) e.preventDefault(); }; // the browser's own middle-click scrolling
     svg.addEventListener('wheel', onWheel, { passive: false }); // it must be allowed to stop the page from scrolling
     svg.addEventListener('dblclick', onDouble);
-    return () => { svg.removeEventListener('wheel', onWheel); svg.removeEventListener('dblclick', onDouble); };
+    svg.addEventListener('mousedown', noAutoscroll);
+    return () => { svg.removeEventListener('wheel', onWheel); svg.removeEventListener('dblclick', onDouble); svg.removeEventListener('mousedown', noAutoscroll); };
   }, [interactive, focus, maxFit]);
 
+  // The middle button moves the map from anywhere, over the boxes too. The left button does it only from the empty background: on a
+  // cluster's title band or a host's corner it drags that instead (they stop the event), so aiming at them never moves the map.
   const onPointerDown = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
-    if (!interactive) return;
+    if (!interactive || (e.button !== 0 && e.button !== 1)) return;
     const start = { x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y };
     dragged.current = 0;
     const move = (ev: PointerEvent) => {
@@ -129,5 +138,5 @@ export function usePanZoom({ layout, focusId, interactive, inset, maxFit = DEFAU
     onCursor(gridRef((e.clientX - r.left - v.x) / v.k, (e.clientY - r.top - v.y) / v.k), v.k);
   }, [onCursor]);
 
-  return { svgRef, view, animate, panning, wasDragged: () => dragged.current >= 4, hold: () => { moved.current = true; }, focus, onPointerDown, onPointerMove };
+  return { svgRef, view, animate, panning, wasDragged: () => dragged.current >= 4, hold: () => { moved.current = true; }, release: () => { moved.current = false; }, focus, onPointerDown, onPointerMove };
 }

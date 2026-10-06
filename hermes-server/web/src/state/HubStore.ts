@@ -161,6 +161,11 @@ export class HubStore {
     await this.refreshSources();
   }
 
+  async renameSource(id: string, name: string): Promise<void> {
+    await this.client.sources.rename(id, name);
+    await this.refreshSources();
+  }
+
   async removeSource(id: string): Promise<void> {
     await this.client.sources.remove(id);
     await this.refreshSources();

@@ -103,10 +103,14 @@ impl Rig {
 
     /// Adds an agent source the way the admin page does; returns its id and token.
     async fn add_source(&self, kind: &str) -> (String, String) {
+        self.add_source_named(kind, "lab").await
+    }
+
+    async fn add_source_named(&self, kind: &str, name: &str) -> (String, String) {
         let r = self
             .post(
                 "/api/sources",
-                json!({"name": "lab", "type": kind, "hubUrl": self.base}),
+                json!({"name": name, "type": kind, "hubUrl": self.base}),
             )
             .await;
         assert_eq!(r.status(), StatusCode::CREATED);
@@ -990,4 +994,103 @@ async fn the_communication_log_is_for_a_logged_in_admin_only() {
         .await
         .unwrap();
     assert_eq!(put.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_source_is_renamed_without_touching_its_token_and_a_name_in_use_is_refused() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (first, _) = rig.add_source_named("Docker (agent)", "lab-dockr").await; // a typo
+    let (second, _) = rig.add_source_named("Docker (agent)", "lab-b").await;
+
+    let path = |id: &str| format!("/api/sources/{id}");
+    let ok = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&first),
+            json!({"name": "  lab-docker-w1  "}),
+        )
+        .await;
+    assert_eq!(ok.status(), StatusCode::OK);
+    let listed: Value = rig.get("/api/sources").await.json().await.unwrap();
+    let names: Vec<&str> = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"lab-docker-w1"),
+        "{names:?} (the name is trimmed)"
+    );
+
+    let taken = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&second),
+            json!({"name": "LAB-docker-w1"}),
+        )
+        .await;
+    assert_eq!(
+        taken.status(),
+        StatusCode::CONFLICT,
+        "case does not make it another name"
+    );
+    let empty = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&second),
+            json!({"name": "   "}),
+        )
+        .await;
+    assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
+    let gone = rig
+        .send(
+            reqwest::Method::PATCH,
+            "/api/sources/nope",
+            json!({"name": "x"}),
+        )
+        .await;
+    assert_eq!(gone.status(), StatusCode::NOT_FOUND);
+    let same = rig
+        .send(
+            reqwest::Method::PATCH,
+            &path(&first),
+            json!({"name": "lab-docker-w1"}),
+        )
+        .await;
+    assert_eq!(
+        same.status(),
+        StatusCode::OK,
+        "keeping its own name is not a conflict"
+    );
+}
+
+#[tokio::test]
+async fn a_second_source_with_the_name_of_another_is_refused_in_any_case() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    rig.add_source_named("Docker (agent)", "runner-2").await;
+    for name in ["runner-2", " RUNNER-2 "] {
+        let r = rig
+            .post(
+                "/api/sources",
+                json!({"name": name, "type": "Docker (agent)", "hubUrl": rig.base}),
+            )
+            .await;
+        assert_eq!(r.status(), StatusCode::CONFLICT, "{name:?}");
+    }
+    let listed: Value = rig.get("/api/sources").await.json().await.unwrap();
+    assert_eq!(
+        listed.as_array().unwrap().len(),
+        1,
+        "nothing was created by the refused ones"
+    );
+    let other = rig
+        .post(
+            "/api/sources",
+            json!({"name": "runner-3", "type": "Docker (agent)", "hubUrl": rig.base}),
+        )
+        .await;
+    assert_eq!(other.status(), StatusCode::CREATED);
 }

@@ -57,6 +57,7 @@ export function Legend({ open, onOpenChange }: { open: boolean; onOpenChange: (o
         <Row icon={<LinkSample kind="route" />} title="Route">A path exists. When the flows agent runs on the nodes, the line also says how much data moves on it (Mb/s, moving dots); without it, the line only says there is a path. Each network is a hexagon above the hosts with its own colour: its line runs down to a bus and branches to every app on it. A dotted line joins an app to the volume it mounts.</Row>
         <Row icon={<LinkSample kind="control" />} title="Control traffic">Dashed line under the hosts: the cluster brain talking to its workers (heartbeats, scheduling).</Row>
         <Row icon={<LinkSample kind="broken" />} title="Broken link">One end is down, so no traffic.</Row>
+        <Row icon={<span className="mono" style={{ fontSize: 10, lineHeight: 1.2, textAlign: 'center' }}>MOUSE</span>} title="Move the map">Wheel zooms. Drag with the middle button to move the map (the left one too, from the empty background). Double click the background to fit it. Drag a cluster&apos;s title band to rearrange: left or right of another = the same line, above or below = a line of its own (double click a band: automatic). Drag the corner of a host to change its width.</Row>
         <Row icon={<Icon name="terraform" size={20} color={TF_COLOR} />} title="Terraform">“managed” = the machine is defined in Terraform code. “drift” = it was changed by hand and no longer matches the code.</Row>
         <div className="lg-row">
           <div className="lg-ic" />

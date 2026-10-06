@@ -50,6 +50,8 @@ export interface ISettingsApi {
 export interface ISourcesApi {
   list(): Promise<SourceView[]>;
   add(request: AddSourceRequest): Promise<AddSourceResponse>;
+  /** Changes only the name: the agents already installed keep working and nothing is redeployed. */
+  rename(id: string, name: string): Promise<void>;
   remove(id: string): Promise<void>;
   /** Ask the source's agents to run this version; each changes its own image. Progress shows in the source's `upgrade`. */
   upgrade(id: string, version: string): Promise<void>;

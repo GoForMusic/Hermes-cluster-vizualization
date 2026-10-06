@@ -44,7 +44,7 @@ export function Topology({ arg }: { arg: string }) {
 
   return (
     <>
-      <PageHead title="Topology"><span className="muted">scroll = zoom · drag = pan · double-click = fit</span></PageHead>
+      <PageHead title="Topology"><span className="muted">wheel = zoom · middle button = move the view · left drag = move a cluster or resize a host · double-click = fit</span></PageHead>
       <div className="graph-toolbar">
         <div className="tabs">
           {(['all', ...providers] as const).map((p) => (

@@ -329,6 +329,8 @@ pre.code { font-family: var(--mono); font-size: 11.5px; background: var(--bg); b
 
 /* The TV's status view (TvStatus.tsx): a banner, then one card per host, grouped by cluster — githubstatus.com's own layout. */
 .status-body { overflow: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 22px; }
+/* the banner has overflow hidden, which lets a flex column squash it: with the page zoomed in the incidents were cut off instead of the page scrolling */
+.status-body > * { flex: none; }
 .status-nominal { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok); font-weight: 600; }
 .status-banner { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
 .status-banner.st-crit { border-color: color-mix(in srgb, var(--crit) 50%, var(--line)); }
@@ -559,3 +561,13 @@ dialog h2 { margin: 0 0 14px; font-size: 18px; }
 .host-grip { cursor: nwse-resize; }
 .host-grip path { fill: none; stroke: var(--text-dim, var(--line)); stroke-width: 1.6; stroke-linecap: round; opacity: .55; }
 .host-grip:hover path { stroke: var(--accent); opacity: 1; }
+
+/* dragging a cluster by its title band */
+.cl-head.grab { cursor: grab; }
+.cl-dragging, .cl-drag { opacity: .4; }
+/* while a cluster is dragged: a sheet over the map with every cluster as a frame where it would be, the moved one as the shadow box */
+.arrange-sheet { fill: var(--bg); opacity: .8; }
+.arrange-box rect { fill: color-mix(in srgb, var(--surface) 55%, transparent); stroke: var(--line); stroke-width: 2; rx: 10; }
+.arrange-box text { fill: var(--muted); font-size: 24px; font-weight: 600; }
+.arrange-box.moving rect { fill: color-mix(in srgb, var(--accent) 20%, transparent); stroke: var(--accent); stroke-width: 3; stroke-dasharray: 12 7; }
+.arrange-box.moving text { fill: var(--accent); }

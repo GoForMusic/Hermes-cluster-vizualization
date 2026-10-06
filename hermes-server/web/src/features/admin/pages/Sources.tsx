@@ -47,6 +47,7 @@ function SourceCard({ source: s }: { source: SourceView }) {
   const store = useStore();
   const [removing, setRemoving] = useState(false);
   const [changing, setChanging] = useState(false);
+  const [editing, setEditing] = useState(false);
   return (
     <div className="card src-card">
       <div className="src-top"><b>{s.name}</b>{(STATE_CHIP[s.state] ?? STATE_CHIP.pending!)()}</div>
@@ -57,13 +58,42 @@ function SourceCard({ source: s }: { source: SourceView }) {
       <UpgradeLine source={s} />
       {s.builtin ? null : (
         <div className="src-actions">
+          <button className="btn xs" onClick={() => setEditing(true)}>Edit</button>
           <button className="btn xs" onClick={() => setChanging(true)}>Change agent version</button>
           <button className="btn xs danger" onClick={() => setRemoving(true)}>Remove</button>
         </div>
       )}
       <RemoveDialog source={s} open={removing} onClose={() => setRemoving(false)} onConfirm={() => void store.removeSource(s.id)} />
       <ChangeVersionDialog source={s} open={changing} onClose={() => setChanging(false)} />
+      <EditDialog source={s} open={editing} onClose={() => setEditing(false)} />
     </div>
+  );
+}
+
+/** Renaming a source: only the name changes. The agents already installed keep working, so there is nothing to deploy again. */
+function EditDialog({ source: s, open, onClose }: { source: SourceView; open: boolean; onClose: () => void }) {
+  const store = useStore();
+  const [name, setName] = useState(s.name);
+  useEffect(() => { if (open) setName(s.name); }, [open, s.name]);
+  const { busy, error, submit } = useAsyncSubmit(async () => {
+    await store.renameSource(s.id, name.trim());
+    onClose();
+  });
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <form onSubmit={submit}>
+        <h2>Edit {s.name}</h2>
+        <div className="form">
+          <label className="f">Name<input type="text" value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <div className="help" style={{ margin: 0 }}>Only the name changes. The agent already installed keeps working: there is nothing to deploy again.</div>
+          <div className="err">{error}</div>
+        </div>
+        <div className="dlg-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn primary" disabled={busy || !name.trim() || name.trim() === s.name}>Save</button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

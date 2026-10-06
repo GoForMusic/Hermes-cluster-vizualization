@@ -64,6 +64,7 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
     sources: {
       list: () => get('/api/sources'),
       add: (request) => call('POST', '/api/sources', request),
+      rename: (id, name) => send('PATCH', `/api/sources/${encodeURIComponent(id)}`, { name }),
       remove: (id) => send('DELETE', `/api/sources/${encodeURIComponent(id)}`),
       upgrade: (id, version) => send('POST', `/api/sources/${encodeURIComponent(id)}/upgrade`, { version }),
     },
