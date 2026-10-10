@@ -339,3 +339,29 @@ describe('arranging the clusters by hand', () => {
     expect(rowsOf(l.clusters)).toEqual([['b'], ['a'], ['c']]);
   });
 });
+
+describe('regions on the map', () => {
+  const shape = ['a', 'b', 'c'].map((id) => ({ id, networks: [], hosts: [{ id: `${id}-h`, items: [{ id: `${id}-w`, volume: false }] }], hasControl: false }));
+  const region = { id: 'r1', name: 'Office', color: '#4aa3ff', clusterIds: ['a', 'b'] };
+
+  it('frames the clusters of a region and keeps the others outside the frame', () => {
+    const l = layoutToFit(shape, new Map(), null, undefined, [region]);
+    const [frame] = l.regions;
+    expect(l.regions).toHaveLength(1);
+    const inside = (id: string) => { const c = l.clusters.find((x) => x.id === id)!; return c.x >= frame!.x && c.y >= frame!.y && c.x + c.w <= frame!.x + frame!.w && c.y + c.h <= frame!.y + frame!.h; };
+    expect(inside('a') && inside('b')).toBe(true);
+    expect(inside('c')).toBe(false);
+  });
+
+  it('moves the items with their cluster, so the links still land on them', () => {
+    const l = layoutToFit(shape, new Map(), null, undefined, [region]);
+    const host = l.clusters.find((c) => c.id === 'b')!.hosts[0]!;
+    expect(l.hosts.get('b-h')).toBe(host);
+    expect(l.items.get('b-w')!.y).toBeGreaterThan(host.y);
+    expect(l.items.get('b-w')!.x).toBeGreaterThan(host.x);
+  });
+
+  it('draws no frame for a region whose clusters are gone', () => {
+    expect(layoutToFit(shape, new Map(), null, undefined, [{ ...region, clusterIds: ['zzz'] }]).regions).toEqual([]);
+  });
+});

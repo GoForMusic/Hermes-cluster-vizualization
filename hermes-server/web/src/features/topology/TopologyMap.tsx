@@ -2,8 +2,8 @@
 // state), a coordinate grid and traffic links. The layout and the link routes depend on the SHAPE of the topology only, so they are computed
 // again when it changes and not on every sample; the numbers on it come straight from the state. Orchestration only: the grid, the individual
 // box/node/link symbols each live in their own file (`Grid`, `MapHost`, `MapNode`, `MapLink`).
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { CL_HEAD, CL_PAD, MAX_NETWORKS, layoutToFit, layoutTopology, moreId, shapeSignature, topologyShape, type ClusterBox, type Layout } from '../../domain/map/layout';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { CL_HEAD, CL_PAD, MAX_NETWORKS, layoutGrouped, layoutToFit, moreId, shapeSignature, topologyShape, type ClusterBox, type Layout, type RegionBox } from '../../domain/map/layout';
 import { computeLinks } from '../../domain/map/links';
 import { networkTags } from '../../domain/map/networks';
 import { clusterStat, clusterSubtitle, hostStat, nodeTooltip } from '../../domain/mapLabels';
@@ -32,9 +32,13 @@ export interface TopologyMapProps {
   onSelect?: (id: string | null) => void;
   onCursor?: (gridRef: string, zoom: number) => void;
   showLabels?: boolean;
+  /** Right click on a cluster or a region frame (admin only): where the screen was clicked. */
+  onMenu?: (target: MapTarget, at: { x: number; y: number }) => void;
 }
 
-export function TopologyMap({ visible = null, interactive = false, focusId = null, inset, maxFit, selectedId = null, onSelect, onCursor, showLabels = true }: TopologyMapProps) {
+export interface MapTarget { kind: 'cluster' | 'region'; id: string }
+
+export function TopologyMap({ visible = null, interactive = false, focusId = null, inset, maxFit, selectedId = null, onSelect, onCursor, showLabels = true, onMenu }: TopologyMapProps) {
   const state = useWholeState();
   const uid = useId();
 
@@ -60,7 +64,9 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
   }, []);
   const room = size && { w: size.w, h: size.h - (inset?.top ?? 0) - (inset?.bottom ?? 0) };
   const rowsSig = arrangement.rows ? JSON.stringify(arrangement.rows) : '';
-  const layout = useMemo(() => layoutToFit(shape, hostCols.cols, room, arrangement.rows ?? undefined), [sig, colsSig, rowsSig, room?.w, room?.h]);
+  const regions = state.settings.regions;
+  const regionsSig = JSON.stringify(regions);
+  const layout = useMemo(() => layoutToFit(shape, hostCols.cols, room, arrangement.rows ?? undefined, regions), [sig, colsSig, rowsSig, regionsSig, room?.w, room?.h]);
   const edges = [...state.edges, ...mountLinks(state)]; // a volume is joined to the workloads that mount it
   const edgeSig = edges.map((e) => `${e.id}${e.type}${e.from}${e.to}`).join('|');
   // routing the links is the expensive part: it is redone only when the shape or the links themselves change
@@ -87,7 +93,7 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
   const [drag, setDrag] = useState<{ id: string; over: string | null; side: Side } | null>(null);
   const previewRows = drag?.over ? arrange(rowsOf(layout.clusters), drag.id, drag.over, drag.side) : null;
   const previewKey = previewRows ? JSON.stringify(previewRows) : '';
-  const preview = useMemo(() => (previewRows ? layoutTopology(shape, hostCols.cols, undefined, previewRows) : null), [previewKey, sig, colsSig]);
+  const preview = useMemo(() => (previewRows ? layoutGrouped(shape, hostCols.cols, 1500, previewRows, regions) : null), [previewKey, sig, colsSig, regionsSig]);
   const grab = (id: string) => (e: ReactPointerEvent<SVGElement>) => {
     if (!interactive || e.button !== 0) return;
     e.stopPropagation(); // not a pan of the map
@@ -133,9 +139,10 @@ export function TopologyMap({ visible = null, interactive = false, focusId = nul
     >
       <g className={`viewport${zoom.animate ? ' anim' : ''}`} style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
         <Grid w={layout.w} h={layout.h} />
+        <g>{layout.regions.map((r) => <RegionFrame key={r.id} box={r} onMenu={onMenu} />)}</g>
         <g>
           {layout.clusters.map((c) => (
-            <ClusterBoxView key={c.id} box={c} layout={layout} state={state} selectedId={selectedId} interactive={interactive} select={select} onGrab={interactive ? grab(c.id) : undefined} onReset={interactive ? arrangement.clear : undefined} mark={drag?.id === c.id ? 'drag' : undefined} />
+            <ClusterBoxView key={c.id} box={c} layout={layout} state={state} selectedId={selectedId} interactive={interactive} select={select} onGrab={interactive ? grab(c.id) : undefined} onReset={interactive ? arrangement.clear : undefined} onMenu={onMenu} mark={drag?.id === c.id ? 'drag' : undefined} />
           ))}
         </g>
         <g>
@@ -191,9 +198,10 @@ interface ClusterDrag {
   onReset?: () => void;
   /** `drag`: this one is being moved. */
   mark?: 'drag';
+  onMenu?: TopologyMapProps['onMenu'];
 }
 
-function ClusterBoxView({ box, state, selectedId, select, onGrab, onReset, mark }: BoxProps & ClusterDrag & { box: ClusterBox }) {
+function ClusterBoxView({ box, state, selectedId, select, onGrab, onReset, mark, onMenu }: BoxProps & ClusterDrag & { box: ClusterBox }) {
   const c = state.nodes.get(box.id);
   if (!c) return null;
   const prov = PROVIDERS[c.provider];
@@ -201,7 +209,7 @@ function ClusterBoxView({ box, state, selectedId, select, onGrab, onReset, mark 
     <g className={mark ? `cl-${mark}` : undefined}>
       <rect className={`cluster-box st-${c.status}`} x={box.x} y={box.y} width={box.w} height={box.h} />
       {/* the whole header grabs: the texts and the icon sit over the band and would take the pointer themselves, and the map would move */}
-      <g className={onGrab ? 'cl-head grab' : 'cl-head'} onPointerDown={onGrab} onDoubleClick={onReset ? (e) => { e.stopPropagation(); onReset(); } : undefined}>
+      <g className={onGrab ? 'cl-head grab' : 'cl-head'} onPointerDown={onGrab} onContextMenu={onMenu ? (e) => { e.preventDefault(); e.stopPropagation(); onMenu({ kind: 'cluster', id: box.id }, { x: e.clientX, y: e.clientY }); } : undefined} onDoubleClick={onReset ? (e) => { e.stopPropagation(); onReset(); } : undefined}>
         <rect className="cl-band" x={box.x} y={box.y} width={box.w} height={CL_HEAD - 6}>
           {onGrab ? <title>Drag onto another cluster to move it: left or right of it = same line, above or below = a line of its own. Double click: automatic.</title> : null}
         </rect>
@@ -218,6 +226,17 @@ function ClusterBoxView({ box, state, selectedId, select, onGrab, onReset, mark 
         const host = state.nodes.get(h.id);
         return host ? <MapHost key={h.id} box={h} host={host} selected={selectedId === host.id} onClick={select(host.id)} /> : null;
       })}
+    </g>
+  );
+}
+
+/** The frame of a region: under everything else, so it only tints the ground its clusters stand on. */
+function RegionFrame({ box, onMenu }: { box: RegionBox; onMenu?: TopologyMapProps['onMenu'] }) {
+  const open = onMenu ? (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); onMenu({ kind: 'region', id: box.id }, { x: e.clientX, y: e.clientY }); } : undefined;
+  return (
+    <g className="region" style={{ '--rg': box.color } as CSSProperties} onContextMenu={open}>
+      <rect className="region-box" x={box.x} y={box.y} width={box.w} height={box.h} />
+      <text className="region-name" x={box.x + 18} y={box.y + 28}>{box.name}</text>
     </g>
   );
 }
