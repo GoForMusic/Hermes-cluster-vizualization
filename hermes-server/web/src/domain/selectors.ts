@@ -30,8 +30,8 @@ export const visibleClusters = (s: HubState): Node[] => clusters(s).filter((c) =
 export const activeAlerts = (s: HubState): Alert[] => s.alerts.filter((a) => !a.resolvedTs);
 
 /** Active alerts, plus ones resolved recently enough to still be worth a status banner — a real incident that just closed itself
- * should not vanish from view the instant it does, the way a status page keeps it visible for a while too. */
-export const recentIncidents = (s: HubState, now: number, withinMs = 10 * 60 * 1000): Alert[] =>
+ * should not vanish from view the instant it does, but a flapping one (a crash-looping runner) must not clutter the page for long either. */
+export const recentIncidents = (s: HubState, now: number, withinMs = 60 * 1000): Alert[] =>
   s.alerts.filter((a) => a.resolvedTs == null || now - a.resolvedTs < withinMs);
 
 /** A node's id, its parent, its parent's parent, and so on up to (and including) its cluster. */

@@ -3,13 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { dtg } from '../../domain/format';
 import type { HubState } from '../../domain/hubState';
-import { PROVIDERS } from '../../domain/providers';
 import { activeAlerts, visibleClusters } from '../../domain/selectors';
 import { ICON } from '../../domain/status';
 import { shallowEqual, useHubState, useStore } from '../../state/context';
 import { beep } from '../../ui/audio';
 import { useNow } from '../../ui/hooks';
-import { Icon } from '../../ui/icons';
 import { Brand } from '../../ui/brand';
 import { StatusTags } from '../shared/StatusTags';
 import { Legend } from '../topology/Legend';
@@ -21,6 +19,7 @@ import { HudBar } from './HudBar';
 import { Scoreboard } from './Scoreboard';
 import { Traffic } from './Traffic';
 import { Console } from './Console';
+import { ClusterTabs } from './ClusterTabs';
 
 const INSET = { top: 84, bottom: 84 };
 
@@ -57,15 +56,7 @@ export function TvScreen() {
     <div className={`tv${crit.length ? ' has-crit' : ''}${settings.sidebar ? '' : ' no-side'}`}>
       <header className="tv-top">
         <div className="seg tv-title"><Brand /></div>
-        <div className="seg tv-pills">
-          {[{ id: null, name: 'All clusters', status: null, provider: null }, ...clusters].map((c) => (
-            <button key={c.id ?? 'all'} className={`pill${focusId === c.id ? ' on' : ''}${c.status ? ` st-${c.status}` : ''}`} title={c.provider ? PROVIDERS[c.provider as keyof typeof PROVIDERS].label : 'Show everything'} onClick={() => choose(c.id)}>
-              {c.status ? <span className="dot" /> : null}
-              {c.provider ? <Icon name={PROVIDERS[c.provider as keyof typeof PROVIDERS].icon} size={14} color={PROVIDERS[c.provider as keyof typeof PROVIDERS].color} /> : null}
-              {c.name}
-            </button>
-          ))}
-        </div>
+        <ClusterTabs clusters={clusters} focusId={focusId} onChoose={choose} />
         <div className="strip">
           {crit.length || warn.length ? null : <div className="nominal">✓ All systems nominal</div>}
           <div className={`cnt st-crit${crit.length ? ' on' : ''}`}><small>Crit</small><b>{crit.length}</b></div>
