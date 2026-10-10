@@ -1,0 +1,8 @@
+# Run the published hub image instead of building it: no clone-and-compile of the Rust workspace.
+#   docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+# .env: HERMES_VERSION, a tag from the repository's releases (1.0.5, ...). Needs Docker Compose 2.24 or newer (for `!reset`).
+services:
+  hub:
+    image: ghcr.io/goformusic/hermes-server:${HERMES_VERSION:?set HERMES_VERSION in .env to a release tag}
+    build: !reset null
+    pull_policy: always
