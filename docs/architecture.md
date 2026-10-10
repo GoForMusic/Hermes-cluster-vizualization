@@ -55,6 +55,30 @@ without relying on an `X-Forwarded-Proto` header from a proxy that is not there)
 
 A `network` node is a way to reach workloads: a Docker overlay/macvlan network, or in Kubernetes a Service, an Ingress, a load balancer, and "outside" (`meta.netKind` says which). The Kubernetes collector reads Services, EndpointSlices and Ingresses (best effort: an agent whose account cannot list them draws everything else) and joins outside → Ingress → Service → pods. It belongs to the cluster, not to a host, and is joined to what is on it by `route` edges: a path exists, with no measured rate (the API does not tell who sent what; that is the flow agent, see TODO). The Swarm collector draws the networks you defined (swarm scope, not the routing mesh, with at least one task on them); `bridge`, `host`, `none` and `docker_gwbridge` are per-node plumbing and are left out.
 
+## What the Kubernetes agent may do (its ClusterRole)
+
+The manifest the hub generates gives the agent a read-only `ClusterRole` (`hermes-agent`); there is no `create`, `update`, `patch` or `delete` in it. This is what each rule is for, and what is lost without it (the agent draws everything it is allowed to and skips the rest):
+
+| Rule | Verbs | Used for |
+|---|---|---|
+| core: `nodes` | get, list, watch | the hosts: role, address, capacity, Ready condition, labels (a node's location comes from them, see below) |
+| core: `pods` | get, list, watch | the workloads: phase, restarts, image, which node, which Services select them |
+| core: `persistentvolumeclaims` | get, list, watch | the volumes drawn under a host (size, class, which pods mount them) |
+| core: `namespaces` | get, list, watch | the `kube-system` UID, which identifies the cluster (see *One cluster, one source*) |
+| core: `services` | get, list, watch | the Service nodes of the network layer |
+| `discovery.k8s.io`: `endpointslices` | get, list, watch | which pods a Service really leads to |
+| `networking.k8s.io`: `ingresses`, `networkpolicies` | get, list, watch | the Ingress and policy nodes; outside → Ingress → Service → pod |
+| `gateway.networking.k8s.io`: `gateways`, `httproutes` | get, list, watch | the same for Gateway API; a cluster without those CRDs just has none |
+| core: `nodes/proxy` | get | the kubelet's stats summary through the API server (`/api/v1/nodes/<n>/proxy/stats/summary`): how full each volume is and each pod's network counters. Without it there are no volume percentages and no per-pod rates |
+| core: `nodes/stats` | get | granted next to `nodes/proxy`, but the agent reads the stats through `nodes/proxy`: this rule is not used today |
+| `metrics.k8s.io`: `nodes`, `pods` | get, list | CPU and memory right now, from metrics-server. A cluster without metrics-server has no numbers |
+
+`nodes/proxy` is the broadest of these: on a kubelet it can reach more than the stats endpoint, so a cluster where that is not acceptable can leave it out and lose volume usage and pod network rates. When the source is added with "Allow upgrades from the dashboard", a namespaced `Role` is added too: `get` and `patch` on two named objects only (the agent's own Deployment and the node agents' DaemonSet), to change their image.
+
+## Where a machine is
+
+A host can say where it is (a rack, a site, a region): it is drawn next to its address on the map and listed in its details. The agent reads it from what the cluster already knows: a Kubernetes node label `hermes.io/location`, else `topology.kubernetes.io/region` and `/zone` (set by the cloud providers); a Swarm node label `location` (`docker node update --label-add location=rack-2 <node>`); and for a standalone Docker machine the `NODE_LOCATION` variable. Nothing says where it is: nothing is drawn.
+
 ## Flows (who talks to whom)
 
 The node agent (one pod per node, root with no capabilities), when the source was added with "Show who talks to whom" (`FLOWS=1`, and then `hostNetwork`: the node's own network namespace), also reads the kernel's connection table and sends `Flows`: for each pair of addresses and port, the Mbit/s in each direction, and which address answered when the connection was translated (a Service address answered by a pod). The hub knows what the addresses are (`podIP` of a pod, `ip` of a Service or a node) and puts the rate on the route link that already exists: a Service to the pod that answered, outside to a load balancer or node port. A flow that matches no link is left out, never invented; the same connection seen by two nodes is counted once; rates from an agent that stopped reporting are zeroed after 20 s. The kernel only counts bytes when `net.netfilter.nf_conntrack_acct=1`.
