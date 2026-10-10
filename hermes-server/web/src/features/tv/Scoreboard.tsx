@@ -31,7 +31,7 @@ export function Scoreboard() {
     [state.nodes, state.kids, state.settings, state.uptime],
   );
   return (
-    <section className="panel">
+    <section className="panel grow hosts">
       <div className="panel-h">Hosts<em>{s.hostsUp}/{s.hostsTotal} up</em></div>
       <div className="panel-b" style={{ padding: 0 }}>
         <table className="score">

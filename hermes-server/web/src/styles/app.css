@@ -151,6 +151,17 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .grid-major { stroke: #182130; stroke-width: 1.2; fill: none; }
 .grid-label { fill: #2a374a; font: 500 11px var(--mono); }
 
+.region-box { fill: color-mix(in srgb, var(--rg) 7%, transparent); stroke: var(--rg); stroke-opacity: .55; stroke-width: 1.5; stroke-dasharray: 10 6; rx: 22; }
+.region.drop .region-box { fill: color-mix(in srgb, var(--rg) 18%, transparent); stroke-opacity: 1; }
+.region-name { fill: var(--rg); font: 700 18px var(--font); text-transform: uppercase; letter-spacing: .12em; }
+.region-menu { position: fixed; z-index: 60; min-width: 220px; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; font: 13px var(--font); }
+.region-menu button, .region-menu input { text-align: left; background: transparent; border: 0; color: var(--text); padding: 7px 10px; font: inherit; cursor: pointer; }
+.region-menu button:hover { background: var(--surface-3); }
+.region-menu input { background: var(--bg); border: 1px solid var(--line-2); margin: 2px; cursor: text; }
+.region-menu .sep { height: 1px; background: var(--line); margin: 4px 0; }
+.region-menu .swatches { display: flex; gap: 6px; padding: 6px 10px; }
+.region-menu .swatches button { width: 20px; height: 20px; padding: 0; border: 1px solid var(--line-2); }
+.region-menu .danger { color: var(--crit); }
 .cluster-box { fill: rgba(255, 255, 255, .012); stroke: var(--line-2); stroke-width: 1.2; rx: 16; }
 .cluster-box.st-crit { stroke: var(--crit); }
 .cluster-box.st-warn { stroke: var(--warn); }
@@ -294,7 +305,17 @@ pre.code { font-family: var(--mono); font-size: 11.5px; background: var(--bg); b
 .tv-top > * { min-width: 0; }
 .seg { display: flex; align-items: center; }
 .tv-title { gap: 10px; font: 700 17px var(--font); flex: none; }
-.tv-pills { display: flex; gap: 4px; flex: 1; overflow: hidden; }
+.tv-pills { display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
+.tv-pills::-webkit-scrollbar { display: none; }
+.tv-tabs { display: flex; align-items: center; gap: 4px; flex: 1; position: relative; }
+.tv-tabs .arrow, .tv-tabs .pick { flex: none; width: 26px; height: 28px; border: 1px solid var(--line-2); border-radius: 0; background: var(--surface-2); color: var(--muted); font: 700 14px var(--mono); cursor: pointer; }
+.tv-tabs .arrow:hover, .tv-tabs .pick:hover { color: var(--text); background: var(--surface-3); }
+.tv-tabs .arrow[disabled] { opacity: .3; cursor: default; }
+.tv-tabs .pick { width: auto; padding: 0 8px; font-size: 12px; }
+.tab-menu { position: absolute; top: 34px; right: 0; z-index: 40; width: 280px; max-height: 360px; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.tab-menu input { margin: 6px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--line-2); color: var(--text); font: 13px var(--font); }
+.tab-menu .list { overflow: auto; }
+.tab-menu .pill { width: 100%; border-radius: 0; }
 .pill { padding: 5px 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font: 500 13px var(--font); cursor: pointer; display: inline-flex; gap: 7px; align-items: center; white-space: nowrap; }
 .pill:hover { color: var(--text); background: var(--surface-2); }
 .pill.on { color: var(--text); background: var(--surface-3); border-color: var(--line-2); }
@@ -361,6 +382,8 @@ pre.code { font-family: var(--mono); font-size: 11.5px; background: var(--bg); b
 .panel-b { padding: 8px; }
 .panel.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .panel.grow .panel-b { flex: 1; min-height: 0; overflow: auto; padding: 0; }
+.panel.hosts { flex: 2 1 0; }
+.panel.hosts .score thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
 
 /* monitor list (Kuma) used by the TV host list and the admin dashboard */
 .score { width: 100%; border-collapse: collapse; font-size: 12.5px; }

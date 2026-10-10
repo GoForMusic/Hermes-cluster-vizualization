@@ -1,6 +1,7 @@
 // Where everything goes on the map: clusters > (a row of networks and their bus lines) > hosts > workloads and volumes. Pure geometry: it works on the SHAPE of the topology (which
 // ids sit where), never on live numbers, so it is computed again only when the shape changes, not on every metrics sample.
 import { isShown, kidsOf, shownKids, visibleClusters } from '../selectors';
+import type { Region } from '../settings';
 import type { HubState } from '../hubState';
 
 export const CELL_W = 112, CELL_H = 104;
@@ -54,8 +55,12 @@ export interface NetworkPlaced extends Placed { trunk: number; bus: number }
 /** `cols` is how many columns its workloads are laid out in: what the person's resize changes. */
 export interface HostBox { id: string; x: number; y: number; w: number; h: number; cols: number; items: Placed[] }
 export interface ClusterBox { id: string; x: number; y: number; w: number; h: number; hosts: HostBox[]; networks: NetworkPlaced[] }
+/** The frame of a region, in map coordinates. */
+export interface RegionBox { id: string; name: string; color: string; x: number; y: number; w: number; h: number }
 export interface Layout {
   clusters: ClusterBox[];
+  /** Frames drawn under the clusters; empty without regions. */
+  regions: RegionBox[];
   /** the centre of every workload, volume and network */
   items: Map<string, Placed>;
   hosts: Map<string, HostBox>;
@@ -163,11 +168,53 @@ export function layoutTopology(shape: readonly ShapeCluster[], colsOf: ReadonlyM
       return abs;
     }),
   }));
-  return { clusters, items, hosts: hostMap, w: maxX, h: y };
+  return { clusters, regions: [], items, hosts: hostMap, w: maxX, h: y };
 }
 
 /** Is any workload, volume or network of this state drawn? (used to know when the map must be laid out again) */
 export const drawnCount = (s: HubState): number => [...s.nodes.values()].filter((n) => (n.kind === 'workload' || n.kind === 'volume' || n.kind === 'network') && isShown(s, n)).length;
+
+export const RG_PAD = 24, RG_HEAD = 44, RG_GAP = 56;
+
+/** Moves everything a layout placed. The maps hold the same objects as `clusters`, so they follow. */
+function shift(l: Layout, dx: number, dy: number): void {
+  for (const c of l.clusters) {
+    c.x += dx; c.y += dy;
+    for (const n of c.networks) { n.x += dx; n.y += dy; n.trunk += dx; n.bus += dy; }
+    for (const h of c.hosts) { h.x += dx; h.y += dy; for (const it of h.items) { it.x += dx; it.y += dy; } }
+  }
+}
+
+/**
+ * The layout with the regions: each region's clusters are laid out among themselves and framed, the clusters in no region form a
+ * block without a frame, and the blocks flow left to right, wrapping at `maxRowW`. Without regions it is `layoutTopology`.
+ */
+export function layoutGrouped(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, maxRowW: number, rows: Rows | undefined, regions: readonly Region[]): Layout {
+  const owner = new Map<string, string>();
+  for (const r of regions) for (const id of r.clusterIds) if (!owner.has(id)) owner.set(id, r.id);
+  const framed = regions.filter((r) => shape.some((c) => owner.get(c.id) === r.id));
+  if (!framed.length) return layoutTopology(shape, colsOf, maxRowW, rows);
+  const blocks = [...framed.map((r) => ({ region: r, shape: shape.filter((c) => owner.get(c.id) === r.id) })), { region: null, shape: shape.filter((c) => !owner.has(c.id)) }].filter((b) => b.shape.length);
+  const out: Layout = { clusters: [], regions: [], items: new Map(), hosts: new Map(), w: 0, h: 0 };
+  let x = 0, y = 0, rowH = 0;
+  for (const b of blocks) {
+    const ids = new Set(b.shape.map((c) => c.id));
+    const inner = layoutTopology(b.shape, colsOf, maxRowW, rows?.map((r) => r.filter((id) => ids.has(id))).filter((r) => r.length));
+    const pad = b.region ? RG_PAD : 0, head = b.region ? RG_HEAD : 0;
+    const w = inner.w + 2 * pad, h = inner.h + head + pad;
+    if (x > 0 && x + w > maxRowW) { x = 0; y += rowH + RG_GAP; rowH = 0; }
+    shift(inner, x + pad, y + head);
+    if (b.region) out.regions.push({ id: b.region.id, name: b.region.name, color: b.region.color, x, y, w, h });
+    out.clusters.push(...inner.clusters);
+    inner.items.forEach((v, k) => out.items.set(k, v));
+    inner.hosts.forEach((v, k) => out.hosts.set(k, v));
+    x += w + RG_GAP;
+    rowH = Math.max(rowH, h);
+    out.w = Math.max(out.w, x - RG_GAP);
+    out.h = y + rowH;
+  }
+  return out;
+}
 
 /** The widths clusters may fill before wrapping into the next row, tried by `layoutToFit`. */
 export const ROW_WIDTHS = [900, 1200, 1500, 2000, 2600, 3400, 4400, 6000];
@@ -178,12 +225,13 @@ export const ROW_WIDTHS = [900, 1200, 1500, 2000, 2600, 3400, 4400, 6000];
  * map be shown largest in `view` (the size of the screen, in pixels) wins. Without a size it is the plain layout. Rows a person arranged
  * (`rows`) are used as they are.
  */
-export function layoutToFit(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, view: { w: number; h: number } | null, rows?: Rows): Layout {
-  if (rows) return layoutTopology(shape, colsOf, MAX_ROW_W, rows); // arranged by a person: the lines are theirs
-  if (!view || view.w <= 0 || view.h <= 0) return layoutTopology(shape, colsOf);
-  let best = layoutTopology(shape, colsOf, ROW_WIDTHS[0]), bestK = -1;
+export function layoutToFit(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, view: { w: number; h: number } | null, rows?: Rows, regions: readonly Region[] = []): Layout {
+  const lay = (width: number, r?: Rows) => layoutGrouped(shape, colsOf, width, r, regions);
+  if (rows) return lay(MAX_ROW_W, rows); // arranged by a person: the lines are theirs
+  if (!view || view.w <= 0 || view.h <= 0) return lay(MAX_ROW_W);
+  let best = lay(ROW_WIDTHS[0]), bestK = -1;
   for (const width of ROW_WIDTHS) {
-    const l = width === ROW_WIDTHS[0] ? best : layoutTopology(shape, colsOf, width);
+    const l = width === ROW_WIDTHS[0] ? best : lay(width);
     const k = Math.min(view.w / Math.max(l.w, 1), view.h / Math.max(l.h, 1));
     if (k > bestK + 1e-6) { best = l; bestK = k; }
   }

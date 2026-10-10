@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { assign, regionOf } from '../domain/regions';
 import { computeLinks, gridRef } from '../domain/map/links';
 import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutToFit, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
 import { Router } from '../domain/map/router';
@@ -337,5 +338,43 @@ describe('arranging the clusters by hand', () => {
   it('puts a source nobody placed yet on a line of its own at the end, and forgets ids that are gone', () => {
     const l = layoutToFit(three, new Map(), null, [['b', 'gone'], ['a']]);
     expect(rowsOf(l.clusters)).toEqual([['b'], ['a'], ['c']]);
+  });
+});
+
+describe('regions on the map', () => {
+  const shape = ['a', 'b', 'c'].map((id) => ({ id, networks: [], hosts: [{ id: `${id}-h`, items: [{ id: `${id}-w`, volume: false }] }], hasControl: false }));
+  const region = { id: 'r1', name: 'Office', color: '#4aa3ff', clusterIds: ['a', 'b'] };
+
+  it('frames the clusters of a region and keeps the others outside the frame', () => {
+    const l = layoutToFit(shape, new Map(), null, undefined, [region]);
+    const [frame] = l.regions;
+    expect(l.regions).toHaveLength(1);
+    const inside = (id: string) => { const c = l.clusters.find((x) => x.id === id)!; return c.x >= frame!.x && c.y >= frame!.y && c.x + c.w <= frame!.x + frame!.w && c.y + c.h <= frame!.y + frame!.h; };
+    expect(inside('a') && inside('b')).toBe(true);
+    expect(inside('c')).toBe(false);
+  });
+
+  it('moves the items with their cluster, so the links still land on them', () => {
+    const l = layoutToFit(shape, new Map(), null, undefined, [region]);
+    const host = l.clusters.find((c) => c.id === 'b')!.hosts[0]!;
+    expect(l.hosts.get('b-h')).toBe(host);
+    expect(l.items.get('b-w')!.y).toBeGreaterThan(host.y);
+    expect(l.items.get('b-w')!.x).toBeGreaterThan(host.x);
+  });
+
+  it('draws no frame for a region whose clusters are gone', () => {
+    expect(layoutToFit(shape, new Map(), null, undefined, [{ ...region, clusterIds: ['zzz'] }]).regions).toEqual([]);
+  });
+});
+
+describe('which region a cluster is in', () => {
+  const r = (id: string, ids: string[]) => ({ id, name: id, color: '#fff', clusterIds: ids });
+  it('moves a cluster from one region to another and drops the region it leaves empty', () => {
+    expect(assign([r('x', ['a']), r('y', ['b'])], 'a', 'y')).toEqual([r('y', ['b', 'a'])]);
+  });
+  it('takes a cluster out of every region with null', () => {
+    expect(assign([r('x', ['a', 'b'])], 'a', null)).toEqual([r('x', ['b'])]);
+    expect(regionOf([r('x', ['a'])], 'a')).toBe('x');
+    expect(regionOf([r('x', ['a'])], 'z')).toBeNull();
   });
 });
