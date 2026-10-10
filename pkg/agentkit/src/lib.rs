@@ -4,6 +4,7 @@
 mod config;
 pub mod differ;
 pub mod host;
+pub mod location;
 pub mod netrate;
 mod queue;
 mod runner;

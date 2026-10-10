@@ -141,6 +141,17 @@ fn a_host_says_what_the_machine_is() {
 }
 
 #[test]
+fn a_host_has_a_location_only_when_its_labels_say_where_it_is() {
+    let mut w = World::new();
+    w.nodes[0] = from(
+        json!({"metadata": {"name": "w1", "labels": {"topology.kubernetes.io/region": "eu", "topology.kubernetes.io/zone": "eu-a"}}, "status": {}}),
+    );
+    let (nodes, _) = w.build();
+    assert_eq!(metadata(find(&nodes, "s1:n:w1"))["location"], "eu / eu-a");
+    assert!(metadata(find(&nodes, "s1:n:cp")).get("location").is_none());
+}
+
+#[test]
 fn a_node_that_is_not_ready_is_a_critical_host() {
     let mut w = World::new();
     w.nodes[0] = node("w1", false, false);

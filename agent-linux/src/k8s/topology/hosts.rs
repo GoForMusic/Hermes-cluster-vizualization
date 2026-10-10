@@ -72,6 +72,21 @@ pub fn build(cid: &str, now_ms: i64, nodes: &[Node], node_usage: &HashMap<String
             m.insert("memMiB".to_string(), u.bytes / (1 << 20) as f64);
         }
         let info = status.and_then(|s| s.node_info.as_ref());
+        let mut host_meta = serde_json::json!({
+            "ip": ip,
+            "role": role,
+            "vcpu": quantity_of(capacity, "cpu").unwrap_or(0.0).ceil(),
+            "ram": quantity_of(capacity, "memory").unwrap_or(0.0) / GIB,
+            "os": info.map(|x| x.os_image.as_str()).unwrap_or_default(),
+            "kubelet": info.map(|x| x.kubelet_version.as_str()).unwrap_or_default(),
+            "osType": info.map(|x| x.operating_system.as_str()).unwrap_or_default(), // linux | windows
+            "arch": info.map(|x| x.architecture.as_str()).unwrap_or_default(),
+        });
+        if let Some(location) = hermes_agentkit::location::from_labels(|k| {
+            labels.and_then(|l| l.get(k)).map(String::as_str)
+        }) {
+            host_meta["location"] = serde_json::json!(location);
+        }
         out.nodes.push(PbNode {
             id: host_id(name),
             kind: NodeKind::Host.into(),
@@ -82,16 +97,7 @@ pub fn build(cid: &str, now_ms: i64, nodes: &[Node], node_usage: &HashMap<String
             reason,
             since: now_ms,
             m,
-            meta: meta(serde_json::json!({
-                "ip": ip,
-                "role": role,
-                "vcpu": quantity_of(capacity, "cpu").unwrap_or(0.0).ceil(),
-                "ram": quantity_of(capacity, "memory").unwrap_or(0.0) / GIB,
-                "os": info.map(|x| x.os_image.as_str()).unwrap_or_default(),
-                "kubelet": info.map(|x| x.kubelet_version.as_str()).unwrap_or_default(),
-                "osType": info.map(|x| x.operating_system.as_str()).unwrap_or_default(), // linux | windows
-                "arch": info.map(|x| x.architecture.as_str()).unwrap_or_default(),
-            })),
+            meta: meta(host_meta),
         });
         if control_plane {
             out.control.push(name.to_string())

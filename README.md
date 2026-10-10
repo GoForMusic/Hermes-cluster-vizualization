@@ -87,6 +87,13 @@ echo "HUB_SECRET_KEY=$(openssl rand -hex 32)" > .env    # encrypts credentials (
 docker compose up -d --build        # http://localhost:8765  (PORT=9000 to change)
 ```
 
+To try it without compiling anything, run the published image instead (`HERMES_VERSION` is a release tag, for example `1.0.5`; Docker Compose 2.24+):
+
+```bash
+echo "HERMES_VERSION=1.0.5" >> .env
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
 The first visit asks you to create the admin account (only its password hash is stored). Then add a source in **Admin → Sources**:
 
 | Source type | How it works | You provide |

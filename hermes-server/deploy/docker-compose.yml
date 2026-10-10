@@ -4,7 +4,7 @@ services:
   hub:
     build:
       context: ../..            # repository root: the hub is built from the Cargo workspace
-      dockerfile: infraviz-server/Dockerfile
+      dockerfile: hermes-server/Dockerfile
     container_name: infra-viz
     restart: unless-stopped
     # host networking: the hub must open connections to cluster API servers on the libvirt lab network

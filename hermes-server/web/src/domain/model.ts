@@ -36,6 +36,8 @@ export interface NodeMeta {
   uid?: string;
   ip?: string;
   role?: string;
+  /** Where the machine is (a rack, a site, a region), from its node labels or the agent's `NODE_LOCATION`. */
+  location?: string;
   vcpu?: number;
   ram?: number;
   os?: string;

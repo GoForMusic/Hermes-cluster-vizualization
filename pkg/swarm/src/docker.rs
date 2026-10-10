@@ -72,6 +72,9 @@ pub struct NodeSpec {
     pub role: String,
     #[serde(rename = "Availability")]
     pub availability: String,
+    /// The labels an admin put on the node (`docker node update --label-add location=rack-2`).
+    #[serde(rename = "Labels")]
+    pub labels: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]

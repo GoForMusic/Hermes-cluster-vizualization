@@ -36,6 +36,7 @@ export function NodeDetails({ state, node: n }: { state: HubState; node: Node })
   } else if (n.kind === 'host') {
     kv('IP', <Mono>{n.meta.ip}</Mono>);
     kv('Role', n.meta.role);
+    if (n.meta.location) kv('Location', n.meta.location);
     kv('Resources', `${n.meta.vcpu} vCPU · ${Number(n.meta.ram).toFixed(1)} GiB RAM`);
     kv('OS', `${n.meta.osType ?? '?'}${n.meta.arch ? `/${n.meta.arch}` : ''} · ${n.meta.os}`);
     kv('Load', n.m.cpu == null ? '—' : `CPU ${n.m.cpu.toFixed(1)}% · memory ${(n.m.mem ?? 0).toFixed(1)}%`);
