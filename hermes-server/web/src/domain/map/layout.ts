@@ -57,8 +57,11 @@ export interface HostBox { id: string; x: number; y: number; w: number; h: numbe
 export interface ClusterBox { id: string; x: number; y: number; w: number; h: number; hosts: HostBox[]; networks: NetworkPlaced[] }
 /** The frame of a region, in map coordinates. */
 export interface RegionBox { id: string; name: string; color: string; x: number; y: number; w: number; h: number }
+/** Where a block of the map is: a region with its frame, or (`UNGROUPED`) the clusters that are in no region. */
+export interface Block { id: string; x: number; y: number; w: number; h: number }
 export interface Layout {
   clusters: ClusterBox[];
+  blocks: Block[];
   /** Frames drawn under the clusters; empty without regions. */
   regions: RegionBox[];
   /** the centre of every workload, volume and network */
@@ -168,13 +171,15 @@ export function layoutTopology(shape: readonly ShapeCluster[], colsOf: ReadonlyM
       return abs;
     }),
   }));
-  return { clusters, regions: [], items, hosts: hostMap, w: maxX, h: y };
+  return { clusters, blocks: [], regions: [], items, hosts: hostMap, w: maxX, h: y };
 }
 
 /** Is any workload, volume or network of this state drawn? (used to know when the map must be laid out again) */
 export const drawnCount = (s: HubState): number => [...s.nodes.values()].filter((n) => (n.kind === 'workload' || n.kind === 'volume' || n.kind === 'network') && isShown(s, n)).length;
 
 export const RG_PAD = 24, RG_HEAD = 44, RG_GAP = 56;
+/** The id of the block of clusters that are in no region. */
+export const UNGROUPED = '_';
 
 /** Moves everything a layout placed. The maps hold the same objects as `clusters`, so they follow. */
 function shift(l: Layout, dx: number, dy: number): void {
@@ -187,32 +192,62 @@ function shift(l: Layout, dx: number, dy: number): void {
 
 /**
  * The layout with the regions: each region's clusters are laid out among themselves and framed, the clusters in no region form a
- * block without a frame, and the blocks flow left to right, wrapping at `maxRowW`. Without regions it is `layoutTopology`.
+ * block without a frame, and the blocks go on lines: the ones a person arranged (`regionRows`), else they flow left to right and wrap
+ * at `maxRowW`. Without regions it is `layoutTopology`.
  */
-export function layoutGrouped(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, maxRowW: number, rows: Rows | undefined, regions: readonly Region[]): Layout {
+export function layoutGrouped(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, maxRowW: number, rows: Rows | undefined, regions: readonly Region[], regionRows?: Rows): Layout {
   const owner = new Map<string, string>();
   for (const r of regions) for (const id of r.clusterIds) if (!owner.has(id)) owner.set(id, r.id);
   const framed = regions.filter((r) => shape.some((c) => owner.get(c.id) === r.id));
   if (!framed.length) return layoutTopology(shape, colsOf, maxRowW, rows);
-  const blocks = [...framed.map((r) => ({ region: r, shape: shape.filter((c) => owner.get(c.id) === r.id) })), { region: null, shape: shape.filter((c) => !owner.has(c.id)) }].filter((b) => b.shape.length);
-  const out: Layout = { clusters: [], regions: [], items: new Map(), hosts: new Map(), w: 0, h: 0 };
-  let x = 0, y = 0, rowH = 0;
-  for (const b of blocks) {
-    const ids = new Set(b.shape.map((c) => c.id));
-    const inner = layoutTopology(b.shape, colsOf, maxRowW, rows?.map((r) => r.filter((id) => ids.has(id))).filter((r) => r.length));
-    const pad = b.region ? RG_PAD : 0, head = b.region ? RG_HEAD : 0;
-    const w = inner.w + 2 * pad, h = inner.h + head + pad;
-    if (x > 0 && x + w > maxRowW) { x = 0; y += rowH + RG_GAP; rowH = 0; }
-    shift(inner, x + pad, y + head);
-    if (b.region) out.regions.push({ id: b.region.id, name: b.region.name, color: b.region.color, x, y, w, h });
-    out.clusters.push(...inner.clusters);
-    inner.items.forEach((v, k) => out.items.set(k, v));
-    inner.hosts.forEach((v, k) => out.hosts.set(k, v));
-    x += w + RG_GAP;
-    rowH = Math.max(rowH, h);
-    out.w = Math.max(out.w, x - RG_GAP);
-    out.h = y + rowH;
+  const measured = [...framed.map((r) => ({ id: r.id, region: r as Region | null, shape: shape.filter((c) => owner.get(c.id) === r.id) })), { id: UNGROUPED, region: null, shape: shape.filter((c) => !owner.has(c.id)) }]
+    .filter((b) => b.shape.length)
+    .map((b) => {
+      const ids = new Set(b.shape.map((c) => c.id));
+      const inner = layoutTopology(b.shape, colsOf, maxRowW, rows?.map((r) => r.filter((id) => ids.has(id))).filter((r) => r.length));
+      const pad = b.region ? RG_PAD : 0, head = b.region ? RG_HEAD : 0;
+      return { ...b, inner, pad, head, w: inner.w + 2 * pad, h: inner.h + head + pad };
+    });
+
+  // the lines: a person's (a block nobody placed yet comes last, on a line of its own), else as many as fit
+  const lines: (typeof measured)[] = [];
+  if (regionRows?.length) {
+    const byId = new Map(measured.map((m) => [m.id, m]));
+    const used = new Set<string>();
+    for (const row of regionRows) {
+      const line = row.flatMap((id) => { const m = byId.get(id); return m && !used.has(id) ? (used.add(id), [m]) : []; });
+      if (line.length) lines.push(line);
+    }
+    const rest = measured.filter((m) => !used.has(m.id));
+    if (rest.length) lines.push(rest);
+  } else {
+    let width = 0;
+    for (const m of measured) {
+      if (lines.length && width > 0 && width + m.w > maxRowW) { lines.push([]); width = 0; }
+      if (!lines.length) lines.push([]);
+      lines[lines.length - 1]!.push(m);
+      width += m.w + RG_GAP;
+    }
   }
+
+  const out: Layout = { clusters: [], blocks: [], regions: [], items: new Map(), hosts: new Map(), w: 0, h: 0 };
+  let y = 0;
+  for (const line of lines) {
+    let x = 0, lineH = 0;
+    for (const m of line) {
+      shift(m.inner, x + m.pad, y + m.head);
+      out.blocks.push({ id: m.id, x, y, w: m.w, h: m.h });
+      if (m.region) out.regions.push({ id: m.region.id, name: m.region.name, color: m.region.color, x, y, w: m.w, h: m.h });
+      out.clusters.push(...m.inner.clusters);
+      m.inner.items.forEach((v, k) => out.items.set(k, v));
+      m.inner.hosts.forEach((v, k) => out.hosts.set(k, v));
+      x += m.w + RG_GAP;
+      lineH = Math.max(lineH, m.h);
+    }
+    out.w = Math.max(out.w, x - RG_GAP);
+    y += lineH + RG_GAP;
+  }
+  out.h = Math.max(0, y - RG_GAP);
   return out;
 }
 
@@ -225,8 +260,8 @@ export const ROW_WIDTHS = [900, 1200, 1500, 2000, 2600, 3400, 4400, 6000];
  * map be shown largest in `view` (the size of the screen, in pixels) wins. Without a size it is the plain layout. Rows a person arranged
  * (`rows`) are used as they are.
  */
-export function layoutToFit(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, view: { w: number; h: number } | null, rows?: Rows, regions: readonly Region[] = []): Layout {
-  const lay = (width: number, r?: Rows) => layoutGrouped(shape, colsOf, width, r, regions);
+export function layoutToFit(shape: readonly ShapeCluster[], colsOf: ReadonlyMap<string, number>, view: { w: number; h: number } | null, rows?: Rows, regions: readonly Region[] = [], regionRows?: Rows): Layout {
+  const lay = (width: number, r?: Rows) => layoutGrouped(shape, colsOf, width, r, regions, regionRows);
   if (rows) return lay(MAX_ROW_W, rows); // arranged by a person: the lines are theirs
   if (!view || view.w <= 0 || view.h <= 0) return lay(MAX_ROW_W);
   let best = lay(ROW_WIDTHS[0]), bestK = -1;

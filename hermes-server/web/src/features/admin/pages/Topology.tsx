@@ -15,7 +15,7 @@ import { ContainerList, NodeDetails, helpFor } from '../NodeDetails';
 import { PageHead } from '../PageHead';
 import { Legend } from '../../topology/Legend';
 import { TopologyMap, type MapTarget } from '../../topology/TopologyMap';
-import { assign } from '../../../domain/regions';
+import { assign, withRegions } from '../../../domain/regions';
 import { RegionMenu } from '../../topology/RegionMenu';
 
 const LEGEND_SEEN = 'hermes.legendSeen';
@@ -47,7 +47,7 @@ export function Topology({ arg }: { arg: string }) {
 
   return (
     <>
-      <PageHead title="Topology"><span className="muted">wheel = zoom · middle button = move the view · left drag = move a cluster (into a region too) or resize a host · right click = regions · double-click = fit</span></PageHead>
+      <PageHead title="Topology"><span className="muted">wheel = zoom · middle button = move the view · left drag = move a cluster (into a region too) or resize a host · drag a region by its name = move it · right click = regions · double-click = fit</span></PageHead>
       <div className="graph-toolbar">
         <div className="tabs">
           {(['all', ...providers] as const).map((p) => (
@@ -65,7 +65,7 @@ export function Topology({ arg }: { arg: string }) {
       </div>
       <div className="split">
         <div className="card graph-card tall">
-          <TopologyMap visible={visible} interactive selectedId={selected} onSelect={setSelected} showLabels={labels} onAssign={(id, region) => store.updateSettings((s) => ({ ...s, regions: assign(s.regions, id, region) }))} onMenu={(target, at) => setMenu({ target, at })} onCursor={(ref, k) => setCursor(`Grid ${ref} · Zoom ${Math.round(k * 100)}%`)} />
+          <TopologyMap visible={visible} interactive selectedId={selected} onSelect={setSelected} showLabels={labels} onAssign={(id, region) => store.updateSettings((s) => withRegions(s, assign(s.regions, id, region)))} onRegionRows={(rows) => store.updateSettings((s) => ({ ...s, regionRows: rows }))} onMenu={(target, at) => setMenu({ target, at })} onCursor={(ref, k) => setCursor(`Grid ${ref} · Zoom ${Math.round(k * 100)}%`)} />
           <Legend open={legendOpen} onOpenChange={setLegendOpen} />
           {menu ? <RegionMenu key={`${menu.target.kind}${menu.target.id}${menu.at.x}`} target={menu.target} at={menu.at} onClose={() => setMenu(null)} /> : null}
         </div>

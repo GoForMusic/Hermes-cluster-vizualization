@@ -1,6 +1,6 @@
 // The right-click menu of the admin map: put a cluster in a region, or rename, recolour and delete a region. Regions live in the hub's settings.
 import { useState } from 'react';
-import { assign } from '../../domain/regions';
+import { assign, withRegions } from '../../domain/regions';
 import type { Region } from '../../domain/settings';
 import { getNode } from '../../domain/selectors';
 import { useStore, useWholeState } from '../../state/context';
@@ -14,7 +14,7 @@ export function RegionMenu({ target, at, onClose }: Props) {
   const store = useStore();
   const state = useWholeState();
   const regions = state.settings.regions;
-  const change = (next: (r: Region[]) => Region[]) => store.updateSettings((s) => ({ ...s, regions: next(s.regions) }));
+  const change = (next: (r: Region[]) => Region[]) => store.updateSettings((s) => withRegions(s, next(s.regions)));
   const [renaming, setRenaming] = useState<string | null>(null);
   const style = { left: Math.min(at.x, window.innerWidth - 240), top: Math.min(at.y, window.innerHeight - 260) };
 
@@ -57,7 +57,7 @@ function RenameMenu({ id, at, onClose, full = false }: { id: string; at: { left:
       {full ? (
         <>
           <div className="sep" />
-          <button className="danger" onClick={() => { store.updateSettings((s) => ({ ...s, regions: s.regions.filter((r) => r.id !== id) })); onClose(); }}>Delete region</button>
+          <button className="danger" onClick={() => { store.updateSettings((s) => withRegions(s, s.regions.filter((r) => r.id !== id))); onClose(); }}>Delete region</button>
         </>
       ) : null}
     </div>

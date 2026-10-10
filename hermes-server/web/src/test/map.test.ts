@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { assign, regionOf } from '../domain/regions';
+import { assign, regionOf, withRegions } from '../domain/regions';
+import { DEFAULT_SETTINGS } from '../domain/settings';
 import { computeLinks, gridRef } from '../domain/map/links';
 import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutToFit, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
 import { Router } from '../domain/map/router';
@@ -376,5 +377,30 @@ describe('which region a cluster is in', () => {
     expect(assign([r('x', ['a', 'b'])], 'a', null)).toEqual([r('x', ['b'])]);
     expect(regionOf([r('x', ['a'])], 'a')).toBe('x');
     expect(regionOf([r('x', ['a'])], 'z')).toBeNull();
+  });
+});
+
+describe('the lines of the regions', () => {
+  const sh = ['a', 'b'].map((id) => ({ id, networks: [], hosts: [{ id: `${id}-h`, items: [{ id: `${id}-w`, volume: false }] }], hasControl: false }));
+  const regions = [{ id: 'r1', name: 'One', color: '#fff', clusterIds: ['a'] }, { id: 'r2', name: 'Two', color: '#fff', clusterIds: ['b'] }];
+  const at = (l: ReturnType<typeof layoutToFit>, id: string) => l.blocks.find((b) => b.id === id)!;
+
+  it('puts two regions side by side, or one under the other when a person arranged them so', () => {
+    const side = layoutToFit(sh, new Map(), null, undefined, regions, [['r2', 'r1']]);
+    expect(at(side, 'r2').x).toBeLessThan(at(side, 'r1').x);
+    expect(at(side, 'r2').y).toBe(at(side, 'r1').y);
+    const stacked = layoutToFit(sh, new Map(), null, undefined, regions, [['r1'], ['r2']]);
+    expect(at(stacked, 'r2').y).toBeGreaterThan(at(stacked, 'r1').y + at(stacked, 'r1').h - 1);
+    expect(at(stacked, 'r2').x).toBe(at(stacked, 'r1').x);
+  });
+});
+
+describe('the order of the regions after the regions change', () => {
+  const base = { ...DEFAULT_SETTINGS, regions: [{ id: 'r1', name: 'One', color: '#fff', clusterIds: ['a'] }, { id: 'r2', name: 'Two', color: '#fff', clusterIds: ['b'] }], regionRows: [['r1', 'r2'], ['_']] };
+  it('forgets a deleted region and keeps the rest', () => {
+    expect(withRegions(base, [base.regions[0]!]).regionRows).toEqual([['r1'], ['_']]);
+  });
+  it('is automatic again when no region is left', () => {
+    expect(withRegions(base, []).regionRows).toEqual([]);
   });
 });
