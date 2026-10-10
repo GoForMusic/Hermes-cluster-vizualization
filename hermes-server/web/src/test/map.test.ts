@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { assign, regionOf } from '../domain/regions';
 import { computeLinks, gridRef } from '../domain/map/links';
 import { CELL_W, MAX_COLS, MAX_NETWORKS, autoCols, layoutToFit, layoutTopology, moreId, shapeSignature, topologyShape, HOST_PAD } from '../domain/map/layout';
 import { Router } from '../domain/map/router';
@@ -363,5 +364,17 @@ describe('regions on the map', () => {
 
   it('draws no frame for a region whose clusters are gone', () => {
     expect(layoutToFit(shape, new Map(), null, undefined, [{ ...region, clusterIds: ['zzz'] }]).regions).toEqual([]);
+  });
+});
+
+describe('which region a cluster is in', () => {
+  const r = (id: string, ids: string[]) => ({ id, name: id, color: '#fff', clusterIds: ids });
+  it('moves a cluster from one region to another and drops the region it leaves empty', () => {
+    expect(assign([r('x', ['a']), r('y', ['b'])], 'a', 'y')).toEqual([r('y', ['b', 'a'])]);
+  });
+  it('takes a cluster out of every region with null', () => {
+    expect(assign([r('x', ['a', 'b'])], 'a', null)).toEqual([r('x', ['b'])]);
+    expect(regionOf([r('x', ['a'])], 'a')).toBe('x');
+    expect(regionOf([r('x', ['a'])], 'z')).toBeNull();
   });
 });

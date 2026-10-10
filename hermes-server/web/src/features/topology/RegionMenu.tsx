@@ -1,14 +1,12 @@
 // The right-click menu of the admin map: put a cluster in a region, or rename, recolour and delete a region. Regions live in the hub's settings.
 import { useState } from 'react';
+import { assign } from '../../domain/regions';
 import type { Region } from '../../domain/settings';
 import { getNode } from '../../domain/selectors';
 import { useStore, useWholeState } from '../../state/context';
 import type { MapTarget } from './TopologyMap';
 
 export const REGION_COLORS = ['#4aa3ff', '#3ddc97', '#ffb020', '#c084fc', '#ff6b6b', '#22d3ee'] as const;
-
-const without = (regions: Region[], clusterId: string): Region[] =>
-  regions.map((r) => ({ ...r, clusterIds: r.clusterIds.filter((id) => id !== clusterId) })).filter((r) => r.clusterIds.length); // an empty region is not drawn, so it would be unreachable
 
 interface Props { target: MapTarget; at: { x: number; y: number }; onClose: () => void }
 
@@ -25,17 +23,17 @@ export function RegionMenu({ target, at, onClose }: Props) {
     const current = regions.find((r) => r.clusterIds.includes(target.id));
     const create = () => {
       const id = `rg${Date.now().toString(36)}`;
-      change((all) => [...without(all, target.id), { id, name: 'New region', color: REGION_COLORS[all.length % REGION_COLORS.length]!, clusterIds: [target.id] }]);
+      change((all) => assign([...all, { id, name: 'New region', color: REGION_COLORS[all.length % REGION_COLORS.length]!, clusterIds: [] }], target.id, id));
       setRenaming(id);
     };
     if (renaming) return <RenameMenu id={renaming} at={style} onClose={onClose} />;
-    const put = (r: Region) => { change((all) => without(all, target.id).map((x) => (x.id === r.id ? { ...x, clusterIds: [...x.clusterIds, target.id] } : x))); onClose(); };
+    const put = (r: Region) => { change((all) => assign(all, target.id, r.id)); onClose(); };
     return (
       <div className="region-menu" style={style} onPointerDown={(e) => e.stopPropagation()}>
         <small className="muted" style={{ padding: '4px 10px' }}>{name}</small>
         <button onClick={create}>Add region…</button>
         {regions.filter((r) => r !== current).map((r) => <button key={r.id} onClick={() => put(r)}>Move to {r.name}</button>)}
-        {current ? <button onClick={() => { change((all) => without(all, target.id)); onClose(); }}>Remove from {current.name}</button> : null}
+        {current ? <button onClick={() => { change((all) => assign(all, target.id, null)); onClose(); }}>Remove from {current.name}</button> : null}
         <div className="sep" />
         <button onClick={onClose}>Close</button>
       </div>
