@@ -85,3 +85,14 @@ describe('the map', () => {
     expect(container.querySelector('.cluster-box')).toBeNull();
   });
 });
+
+describe('the map, with a location on a host', () => {
+  const node = (id: string, kind: string, parent: string | null, meta: Record<string, unknown> = {}) => ({ id, kind, name: id, parent, provider: 'kubernetes', own: 'ok', status: 'ok', reason: '', since: 1, m: {}, meta });
+  it('says where a host is next to its address, and says nothing for one that does not know', async () => {
+    const { store, container } = await renderWithHub(<TopologyMap />);
+    act(() => store.apply({ type: 'snapshot', nodes: [node('c', 'cluster', null), node('h1', 'host', 'c', { ip: '10.0.0.1', role: 'worker', location: 'rack-2' }), node('h2', 'host', 'c', { ip: '10.0.0.2', role: 'worker' })], edges: [] }));
+    const subs = [...container.querySelectorAll('.host-sub')].map((e) => e.textContent);
+    expect(subs).toContain('10.0.0.1 · worker · rack-2');
+    expect(subs).toContain('10.0.0.2 · worker');
+  });
+});

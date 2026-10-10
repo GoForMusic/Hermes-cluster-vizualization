@@ -6,12 +6,14 @@ import type { Node } from '../../domain/model';
 import { PROVIDERS, TF_COLOR } from '../../domain/providers';
 import { IconG } from '../../ui/icons';
 
+const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
 /** The box of a host. Its text is drawn later (`HostLabel`), over the links, so that a line passing behind a name does not run through it. */
 export const MapHost = memo(function MapHost({ box, host, selected, onClick }: { box: HostBox; host: Node; selected: boolean; onClick: (e: MouseEvent) => void }) {
   const isNas = host.meta.role === 'storage';
   return (
     <g className={`ghost st-${host.status}${selected ? ' sel' : ''}`} data-id={host.id} onClick={onClick}>
-      <title>{isNas ? 'NAS — a storage box on the network. Clusters mount its folders over NFS.' : `Host — a ${host.meta.role} machine (VM or PC) that runs workloads.`}</title>
+      <title>{isNas ? 'NAS — a storage box on the network. Clusters mount its folders over NFS.' : `Host — a ${host.meta.role} machine (VM or PC) that runs workloads.${host.meta.location ? `\nLocation: ${host.meta.location}` : ''}`}</title>
       <rect className="host-box" x={box.x} y={box.y} width={box.w} height={box.h} />
       <rect className="host-strip" x={box.x + 0.6} y={box.y + 0.6} width={box.w - 1.2} height={27} />
     </g>
@@ -36,7 +38,7 @@ export const HostLabel = memo(function HostLabel({ box, host, stat, selected, on
           <text className={iac.drift ? 'tf-tx drift' : 'tf-tx'} x={tfX + 20} y={tfY + 12.5}>{iac.drift ? 'drift' : 'managed'}</text>
         </g>
       ) : null}
-      <text className="host-sub" x={box.x + 10} y={box.y + 44}>{host.meta.ip} · {host.meta.role}</text>
+      <text className="host-sub" x={box.x + 10} y={box.y + 44}>{host.meta.ip} · {host.meta.role}{host.meta.location ? ` · ${clip(host.meta.location, 22)}` : ''}</text>
       <text className="host-stat" x={box.x + 10} y={box.y + 59}>{stat}</text>
     </g>
   );

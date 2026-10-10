@@ -78,6 +78,36 @@ fn restarts(n: &PbNode) -> Value {
 }
 
 #[test]
+fn a_swarm_node_label_says_where_the_machine_is() {
+    let mut nodes = nodes();
+    nodes[1] = from(
+        json!({"ID": "w1", "Spec": {"Role": "worker", "Labels": {"location": "rack-2"}}, "Status": {"State": "ready"}, "Description": {"Hostname": "wrk"}}),
+    );
+    let (out, _) = build(&Inputs {
+        source_id: "s1",
+        source_name: "lab",
+        info: &info(),
+        nodes: &nodes,
+        services: &services(),
+        tasks: &[],
+        networks: &[],
+        now_ms: NOW,
+    });
+    let meta = |id: &str| {
+        json_from_struct(
+            out.iter()
+                .find(|n| n.id == id)
+                .unwrap()
+                .meta
+                .as_ref()
+                .unwrap(),
+        )
+    };
+    assert_eq!(meta("s1:n:w1")["location"], "rack-2");
+    assert!(meta("s1:n:m1").get("location").is_none());
+}
+
+#[test]
 fn nodes_and_running_tasks_become_hosts_and_workloads_with_a_control_link() {
     let (out, edges) = build_with(&[
         task("a", 1, "m1", "running", "running"),

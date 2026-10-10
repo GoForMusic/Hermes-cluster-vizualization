@@ -70,6 +70,21 @@ pub fn build(i: &Inputs<'_>) -> (Vec<PbNode>, Vec<Edge>) {
         let (own, reason) = node_state(n);
         host_name.insert(&n.id, &n.description.hostname);
         let d = &n.description;
+        let mut meta = json!({
+            "ip": n.status.addr,
+            "role": n.spec.role,
+            "osType": d.platform.os.to_lowercase(),
+            "arch": normalize_arch(&d.platform.architecture),
+            "vcpu": d.resources.nano_cpus as f64 / 1e9,
+            "ram": d.resources.memory_bytes as f64 / (1u64 << 30) as f64,
+            "os": format!("{}/{} · Docker {}", d.platform.os, d.platform.architecture, d.engine.engine_version),
+        });
+        let labels = n.spec.labels.as_ref();
+        if let Some(location) = hermes_agentkit::location::from_labels(|k| {
+            labels.and_then(|l| l.get(k)).map(String::as_str)
+        }) {
+            meta["location"] = json!(location);
+        }
         out.push(PbNode {
             id: host_id(&n.id),
             kind: NodeKind::Host.into(),
@@ -79,15 +94,7 @@ pub fn build(i: &Inputs<'_>) -> (Vec<PbNode>, Vec<Edge>) {
             own: own.into(),
             reason,
             since: i.now_ms,
-            meta: Some(struct_from_json(json!({
-                "ip": n.status.addr,
-                "role": n.spec.role,
-                "osType": d.platform.os.to_lowercase(),
-                "arch": normalize_arch(&d.platform.architecture),
-                "vcpu": d.resources.nano_cpus as f64 / 1e9,
-                "ram": d.resources.memory_bytes as f64 / (1u64 << 30) as f64,
-                "os": format!("{}/{} · Docker {}", d.platform.os, d.platform.architecture, d.engine.engine_version),
-            }))),
+            meta: Some(struct_from_json(meta)),
             ..Default::default()
         });
         if n.spec.role == "manager" {
