@@ -31,6 +31,8 @@ export interface Settings {
   rules: Rule[];
   /** Named groups of clusters on the map, set in Admin → Topology and shown as they are on the wallboard. */
   regions: Region[];
+  /** Which regions sit on the same line of the map, top to bottom and left to right (region ids, `_` for the clusters in none); empty: they flow by themselves. */
+  regionRows: string[][];
   /** Which uptime range a fresh Dashboard/TV session starts on (RANGES' ids); '' keeps today's behaviour: the smallest range that
    * already shows all recorded history, so a young cluster is not shown mostly empty buckets. */
   defaultRange: '' | '1h' | '6h' | '24h' | '7d';
@@ -55,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   systemNamespaces: ['kube-system', 'kube-public', 'kube-node-lease', 'kube-flannel', 'calico-system', 'calico-apiserver', 'tigera-operator', 'local-path-storage'],
   rules: DEFAULT_RULES.map((r) => ({ ...r })),
   regions: [],
+  regionRows: [],
   defaultRange: '',
   incidentDays: 30,
 };
@@ -65,5 +68,5 @@ type Saved = Partial<Omit<Settings, 'rules'>> & { rules?: Partial<Rule>[] };
 export function mergeSettings(saved: unknown): Settings {
   const s = (saved && typeof saved === 'object' ? saved : {}) as Saved;
   const rules = DEFAULT_RULES.map((r) => ({ ...r, ...(s.rules ?? []).find((x) => x.id === r.id) }));
-  return { ...DEFAULT_SETTINGS, ...s, clusters: { ...(s.clusters ?? {}) }, rules, regions: Array.isArray(s.regions) ? s.regions : [] };
+  return { ...DEFAULT_SETTINGS, ...s, clusters: { ...(s.clusters ?? {}) }, rules, regions: Array.isArray(s.regions) ? s.regions : [], regionRows: Array.isArray(s.regionRows) ? s.regionRows : [] };
 }

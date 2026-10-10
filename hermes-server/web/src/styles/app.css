@@ -153,6 +153,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 
 .region-box { fill: color-mix(in srgb, var(--rg) 7%, transparent); stroke: var(--rg); stroke-opacity: .55; stroke-width: 1.5; stroke-dasharray: 10 6; rx: 22; }
 .region.drop .region-box { fill: color-mix(in srgb, var(--rg) 18%, transparent); stroke-opacity: 1; }
+.region-head { fill: transparent; cursor: grab; }
+.region.moving .region-box { opacity: .35; }
 .region-name { fill: var(--rg); font: 700 18px var(--font); text-transform: uppercase; letter-spacing: .12em; }
 .region-menu { position: fixed; z-index: 60; min-width: 220px; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; font: 13px var(--font); }
 .region-menu button, .region-menu input { text-align: left; background: transparent; border: 0; color: var(--text); padding: 7px 10px; font: inherit; cursor: pointer; }
