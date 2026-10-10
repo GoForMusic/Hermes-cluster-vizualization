@@ -1,0 +1,29 @@
+# Cloudflare DNS: the certificate comes from Let's Encrypt through the DNS-01 challenge (Traefik writes a TXT record with the
+# Cloudflare API), so port 80 need not be reachable and the orange cloud (proxy) can be on.
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+# .env: CF_DNS_API_TOKEN, an API token with "Zone / DNS / Edit" and "Zone / Zone / Read" on the zone of DOMAIN.
+services:
+  traefik:
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:?set CF_DNS_API_TOKEN in .env}
+    # the base list, with the HTTP-01 challenge replaced by DNS-01 (Compose cannot edit one item of a list)
+    command: !override
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.transport.respondingtimeouts.readtimeout=0
+      - --entrypoints.websecure.transport.respondingtimeouts.writetimeout=0
+      - --entrypoints.websecure.transport.respondingtimeouts.idletimeout=3600s
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?set ACME_EMAIL in .env}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+      - --api.dashboard=false
+      - --ping=true
+      - --log.level=INFO
+      - --accesslog=false
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false

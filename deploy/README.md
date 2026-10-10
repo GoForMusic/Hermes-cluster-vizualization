@@ -23,6 +23,17 @@ docker compose up -d
 The hub itself publishes no port, only Traefik does. Traefik is told that the hub speaks h2c and that streams have no deadline
 (`readtimeout=0`): agents keep one gRPC stream open for as long as they run.
 
+### With Cloudflare
+
+```bash
+# .env: DOMAIN=hermes.example.com, ACME_EMAIL=..., CF_DNS_API_TOKEN=...
+docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+```
+
+The certificate is requested with the DNS-01 challenge through the Cloudflare API, so port 80 does not have to be reachable and the proxy
+(orange cloud) can be on. The token needs *Zone / DNS / Edit* and *Zone / Zone / Read* on the zone. In Cloudflare:
+**SSL/TLS → Full (strict)**, and with the proxy on, enable **Network → gRPC**, or the agents cannot connect through it.
+
 Upgrade: set `HERMES_VERSION` in `.env`, `docker compose pull && docker compose up -d`.
 Back up the data: `docker run --rm -v hermes_hermes-data:/data -v "$PWD":/b busybox tar czf /b/hermes-data.tgz -C /data .`
 (stop the hub first for a clean copy of the SQLite file: `docker compose stop hub`).
