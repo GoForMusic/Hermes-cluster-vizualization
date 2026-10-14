@@ -170,6 +170,9 @@ def post(markdown, key):
 
 
 def main():
+    # the report has emoji in it, and Python on a Windows runner writes to the console in cp1252, which cannot hold them
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--key", required=True)
     parser.add_argument("--title", required=True)
@@ -182,7 +185,7 @@ def main():
     print(markdown)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
-        with open(summary, "a") as f:
+        with open(summary, "a", encoding="utf-8") as f:
             f.write(markdown)
     try:
         post(markdown, args.key)
