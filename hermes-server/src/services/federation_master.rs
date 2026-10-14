@@ -430,7 +430,7 @@ impl MasterLinks {
         endpoint
             .connect()
             .await
-            .map_err(|e| format!("cannot reach {address}: {e}"))
+            .map_err(|e| format!("cannot reach {address}: {}", error_chain(&e)))
     }
 
     /// Keeps the link up for as long as the datacenter is set up: dials, mirrors, and dials again with a back-off when it drops.
@@ -477,7 +477,6 @@ impl MasterLinks {
         if cfg.token.is_empty() {
             return Err("no link token: remove this datacenter and add it again".into());
         }
-        dc.lock().phase = Phase::Connecting;
         let channel = self.channel(&cfg.address).await?;
         let (tx, rx) = mpsc::channel::<MasterMessage>(32);
         tx.send(self.hello(&cfg.name))
@@ -636,6 +635,21 @@ fn view_of(
         agent_address: agent_address.to_string(),
         sources,
     }
+}
+
+/// An error and what caused it, in one line: tonic's own text is just "transport error", and the cause (an unknown certificate authority, a
+/// refused connection) is the part the person needs.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut text = e.to_string();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        let cause_text = cause.to_string();
+        if !text.contains(&cause_text) {
+            text = format!("{text}: {cause_text}");
+        }
+        source = cause.source();
+    }
+    text
 }
 
 /// The member's answer to a refused call, in words for the person adding the datacenter.
