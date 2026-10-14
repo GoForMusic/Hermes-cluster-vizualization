@@ -1,0 +1,28 @@
+# Same job as setup-rust-coverage, for a Windows runner: cargo-llvm-cov (coverage) and cargo-nextest (test runner with a JUnit report), pinned,
+# as the prebuilt binaries their projects publish. Neither project publishes a checksum file for the Windows zips (the Linux ones have one),
+# so the SHA-256 of each is pinned here: bumping a version means downloading the new zip once and writing down its hash.
+name: setup-rust-coverage-windows
+description: Install cargo-llvm-cov and cargo-nextest, and the LLVM tools coverage needs, on a Windows runner
+runs:
+  using: composite
+  steps:
+    - name: 🧰 Download cargo-llvm-cov and cargo-nextest and install them
+      shell: pwsh
+      run: |
+        $llvmCovVersion = "0.9.1"
+        $llvmCovSha256 = "656590cfa13bb7478595bbfdd3bc6bc075a4f7f3f0df5a439c1856cb03c5a4d2"
+        $nextestVersion = "0.9.146"
+        $nextestSha256 = "0fa689815c8157e4633225b6b173184b3d546eb6ffb754c3d0e6ea5973284a20"
+        rustup component add llvm-tools-preview
+        $bin = Join-Path $env:USERPROFILE ".cargo\bin"
+        function Install-Zip($url, $sha256, $name) {
+          $zip = Join-Path $env:RUNNER_TEMP "$name.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($actual -ne $sha256) { throw "$name does not match its pinned checksum: $actual" }
+          Expand-Archive $zip -DestinationPath $bin -Force
+        }
+        Install-Zip "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v$llvmCovVersion/cargo-llvm-cov-x86_64-pc-windows-msvc.zip" $llvmCovSha256 "cargo-llvm-cov"
+        Install-Zip "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$nextestVersion/cargo-nextest-$nextestVersion-x86_64-pc-windows-msvc.zip" $nextestSha256 "cargo-nextest"
+        cargo llvm-cov --version
+        cargo nextest --version

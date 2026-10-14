@@ -2,7 +2,7 @@
 """Test report + code coverage of one CI job, as one comment on the pull request (created the first time, updated after that).
 
     pr_report.py --key hub --title "Hub (Rust)" --junit target/nextest/ci/junit.xml --coverage cov.json --coverage-format llvm
-    pr_report.py --key agent-windows --title "Windows agent (Rust)" --junit target/nextest/ci/junit.xml     # no --coverage: the tests only see what compiles here
+    pr_report.py --key agent-windows --title "Windows agent (Rust)" --junit target/nextest/ci/junit.xml --coverage cov.json   # from the Windows runner
     pr_report.py --key web --title "Web (TypeScript)" --junit junit.xml --coverage coverage/coverage-summary.json --coverage-format vitest
 
 JUnit comes from cargo-nextest and from vitest; coverage from `cargo llvm-cov --json --summary-only` (llvm) or vitest's json-summary (vitest).
