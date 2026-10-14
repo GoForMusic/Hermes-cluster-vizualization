@@ -11,6 +11,8 @@ mod agent_controller;
 mod alerts_controller;
 mod auth_controller;
 mod comm_log_controller;
+mod federation_controller;
+mod federation_link_controller;
 mod live_controller;
 mod registry_controller;
 mod settings_controller;
@@ -119,13 +121,22 @@ pub fn routes(state: Shared) -> Router {
         .with_state(state)
 }
 
-/// The agents' side, over gRPC rather than HTTP — merged onto `routes()`'s router in `app::Hub::router`.
+/// The master's pages for its datacenters, and the tunnel that carries the dashboard's admin calls to them. Merged onto `routes()`'s router in
+/// `app::Hub::router`.
+pub fn federation_routes(state: Shared) -> Router {
+    federation_controller::routes(state)
+}
+
+/// The gRPC side, over gRPC rather than HTTP: the agents' stream and the link a master opens to this hub when it is a member. Both services
+/// share one router, because a router can have only one fallback.
 pub fn agent_routes(
+    state: Shared,
     ingest: Arc<dyn IIngestService>,
     upgrades: SharedUpgrades,
     comm_log: SharedCommLog,
 ) -> Router {
-    agent_controller::routes(ingest, upgrades, comm_log)
+    let routes = agent_controller::routes(ingest, upgrades, comm_log);
+    federation_link_controller::add(routes, state).into_axum_router()
 }
 
 // ---- answers ---------------------------------------------------------------------------------------------------
@@ -174,7 +185,34 @@ fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
         })
 }
 
+/// Set only by this process on the requests its federation link makes to its own router: a master's admin request, run here as if an admin had
+/// sent it. The value is random per process and never leaves it, so nothing from the network can carry it.
+const LINK_HEADER: &str = "x-hermes-link";
+
+/// Is this request one the link of this very process made on behalf of the master that manages this hub?
+fn from_link(state: &Shared, headers: &HeaderMap) -> bool {
+    headers
+        .get(LINK_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| state.federation.is_link_secret(v))
+}
+
+/// The master that manages this hub, standing in for the admin.
+fn link_user() -> User {
+    User {
+        id: 0,
+        username: "master".into(),
+        password_hash: String::new(),
+        role: "admin".into(),
+        created: 0,
+    }
+}
+
+/// A hub that another one manages has no logins: whatever session cookie a browser holds is worth nothing.
 fn session_user(state: &Shared, headers: &HeaderMap) -> Option<User> {
+    if state.federation.is_locked() {
+        return None;
+    }
     state.auth.authenticate(&cookie(headers, COOKIE_NAME)?)
 }
 
@@ -195,6 +233,9 @@ impl FromRequestParts<Shared> for Admin {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, state: &Shared) -> Result<Self, Response> {
+        if from_link(state, &parts.headers) {
+            return Ok(Admin(link_user()));
+        }
         let user = session_user(state, &parts.headers).ok_or_else(login_required)?;
         let read_only = matches!(parts.method, Method::GET | Method::HEAD | Method::OPTIONS);
         if !read_only && !csrf_ok(&parts.headers) {
@@ -211,7 +252,11 @@ impl FromRequestParts<Shared> for Viewer {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, state: &Shared) -> Result<Self, Response> {
-        if session_user(state, &parts.headers).is_some() || state.auth.public_view() {
+        if from_link(state, &parts.headers) {
+            return Ok(Viewer);
+        }
+        let public = state.auth.public_view() && !state.federation.is_locked();
+        if session_user(state, &parts.headers).is_some() || public {
             Ok(Viewer)
         } else {
             Err(login_required())

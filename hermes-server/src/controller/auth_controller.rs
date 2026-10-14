@@ -69,6 +69,16 @@ async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(work).await.map_err(internal)
 }
 
+/// The answer of a hub that another one manages, to whoever tries to log in to it.
+fn managed(st: &Shared) -> Option<Response> {
+    st.federation.is_locked().then(|| {
+        fail(
+            StatusCode::FORBIDDEN,
+            "this hub is managed by another hub: log in there",
+        )
+    })
+}
+
 pub(super) async fn auth_status(State(st): State<Shared>, headers: HeaderMap) -> Response {
     let need = match st.auth.needs_setup() {
         Ok(need) => need,
@@ -76,10 +86,12 @@ pub(super) async fn auth_status(State(st): State<Shared>, headers: HeaderMap) ->
     };
     let user = super::session_user(&st, &headers);
     let status = AuthStatus {
-        setup_required: need,
+        // a hub that is managed by another one never asks for an admin: it has no logins
+        setup_required: need && !st.federation.is_locked(),
         authenticated: user.is_some(),
-        public_view: st.auth.public_view(),
+        public_view: st.auth.public_view() && !st.federation.is_locked(),
         username: user.map(|u| u.username),
+        member: st.federation.member_view(crate::database::now_ms()),
     };
     json_response(StatusCode::OK, status)
 }
@@ -116,6 +128,9 @@ pub(super) async fn auth_setup(
     if !csrf_ok(&headers) {
         return csrf_failed();
     }
+    if let Some(r) = managed(&st) {
+        return r;
+    }
     let c: Credentials = match parse(&body) {
         Ok(c) => c,
         Err(r) => return r,
@@ -136,6 +151,9 @@ pub(super) async fn auth_login(
 ) -> Response {
     if !csrf_ok(&headers) {
         return csrf_failed();
+    }
+    if let Some(r) = managed(&st) {
+        return r;
     }
     let c: Credentials = match parse(&body) {
         Ok(c) => c,

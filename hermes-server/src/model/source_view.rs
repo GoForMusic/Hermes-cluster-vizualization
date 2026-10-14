@@ -22,4 +22,11 @@ pub struct SourceView {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub upgrade: Option<UpgradeView>,
+    /// The datacenter (a member hub this hub controls) that hosts the source; none for this hub's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub dc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub dc_name: Option<String>,
 }

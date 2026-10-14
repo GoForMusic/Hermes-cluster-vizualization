@@ -15,12 +15,16 @@ pub struct CommLogRow {
     pub agent: String,
     /// `in` (agent to hub), `out` (hub to agent) or `link` (a connection opened or closed).
     pub dir: String,
-    /// `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`.
+    /// `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`; on a link to a datacenter also `topology`, `event`, `request`, `response`.
     pub kind: String,
     /// What is in it, in a few words: `snapshot ×1 · metrics ×1`.
     pub summary: String,
     #[ts(type = "number")]
     pub bytes: u64,
+    /// The datacenter whose hub the message came through to get here: `agent → dc2 → this hub`. Absent for an agent that reports to this hub itself.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub via: String,
 }
 
 /// The log as the admin page reads it.

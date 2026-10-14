@@ -9,10 +9,14 @@ export type CommLogEntry = { body: unknown, id: number, ts: number, source: stri
  */
 dir: string, 
 /**
- * `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`.
+ * `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`; on a link to a datacenter also `topology`, `event`, `request`, `response`.
  */
 kind: string, 
 /**
  * What is in it, in a few words: `snapshot ×1 · metrics ×1`.
  */
-summary: string, bytes: number, };
+summary: string, bytes: number, 
+/**
+ * The datacenter whose hub the message came through to get here: `agent → dc2 → this hub`. Absent for an agent that reports to this hub itself.
+ */
+via?: string, };

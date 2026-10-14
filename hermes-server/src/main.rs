@@ -11,6 +11,9 @@
 //! * `HUB_SECRET_KEY`           required: 64 hex chars (32 bytes), AES-256 key that encrypts credentials in
 //!   SQLite (kubeconfigs, agent tokens) at rest; generate one with `openssl rand -hex 32` and keep it — losing
 //!   it makes existing sources' secrets unreadable
+//! * `HUB_FEDERATION_CA_FILE`   optional: PEM of an extra certificate authority to trust when this hub, as a master, reaches a member over `https://`
+//! * `HUB_FEDERATION`           optional: `off` makes a hub that another hub manages (a member) a hub on its own again, when that master is
+//!   gone for good. Restart with it set, then remove it.
 //! * `HUB_TLS_CERT`, `HUB_TLS_KEY`  optional, both or neither: PEM cert and private key, so the hub terminates TLS itself
 //!   instead of needing a reverse proxy in front of it. REST/SSE and the agents' gRPC still share the one port.
 
@@ -81,8 +84,25 @@ async fn main() -> Result<()> {
             agent_image_windows: env("HUB_AGENT_IMAGE_WINDOWS", ""),
             agent_pull_secret: env("HUB_AGENT_PULL_SECRET", ""),
             tls_enabled: tls.is_some(),
+            federation_ca: match env("HUB_FEDERATION_CA_FILE", "").as_str() {
+                "" => None,
+                path => Some(
+                    std::fs::read(path)
+                        .with_context(|| format!("cannot read HUB_FEDERATION_CA_FILE {path}"))?,
+                ),
+            },
         },
     );
+    // The way back for a member whose master is gone: restart it once with this set.
+    if env("HUB_FEDERATION", "") == "off" {
+        hub.state
+            .federation
+            .release()
+            .map_err(|e| anyhow::anyhow!("cannot release this hub from its master: {e}"))?;
+        info!(
+            "HUB_FEDERATION=off: this hub is no longer managed by another hub (remove the variable)"
+        );
+    }
     let sources = hub.report_pull_sources();
     hub.spawn_background();
 

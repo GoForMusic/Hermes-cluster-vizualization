@@ -596,3 +596,12 @@ dialog h2 { margin: 0 0 14px; font-size: 18px; }
 .arrange-box text { fill: var(--muted); font-size: 24px; font-weight: 600; }
 .arrange-box.moving rect { fill: color-mix(in srgb, var(--accent) 20%, transparent); stroke: var(--accent); stroke-width: 3; stroke-dasharray: 12 7; }
 .arrange-box.moving text { fill: var(--accent); }
+
+/* federation: a datacenter next to the sources it hosts, its row in Settings, and the pairing code */
+.dc-tag { margin-left: 8px; font: 600 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 6px; vertical-align: middle; }
+.dc-list { display: flex; flex-direction: column; margin-bottom: 12px; }
+.dc-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.dc-row:last-child { border-bottom: 0; }
+.pair-box { display: flex; flex-direction: column; gap: 4px; margin: 0 0 14px; }
+.pair-code { font: 700 26px var(--mono); letter-spacing: .12em; color: var(--text); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 14px; user-select: all; word-break: break-all; }
+.pair-code.small { font-size: 13px; letter-spacing: 0; font-weight: 500; }

@@ -1,4 +1,4 @@
-//! The gRPC contract between agents and the hub, generated from `proto/infraviz/v1/agent.proto`.
+//! The gRPC contract between agents and the hub, generated from `proto/infraviz/v1/agent.proto` (agent <-> hub) and `federation.proto` (master hub <-> member hub).
 
 pub mod value;
 
@@ -8,6 +8,9 @@ pub mod v1 {
 
 /// Version of the contract this build speaks (`Hello.protocol`).
 pub const PROTOCOL: u32 = 1;
+
+/// Version of the master <-> member contract (`MasterHello.protocol`, `MemberHello.protocol`).
+pub const FEDERATION_PROTOCOL: u32 = 1;
 
 /// A version as the hub writes it and a registry tag can hold it: `1.2.3`, `1.2.3-rc.1`.
 pub fn valid_version(version: &str) -> bool {

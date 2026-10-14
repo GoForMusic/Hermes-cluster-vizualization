@@ -4,6 +4,8 @@ import type { AddSourceRequest } from '../generated/AddSourceRequest';
 import type { AddSourceResponse } from '../generated/AddSourceResponse';
 import type { AuthStatus } from '../generated/AuthStatus';
 import type { Edge as WireEdge } from '../generated/Edge';
+import type { FederationView } from '../generated/FederationView';
+import type { MemberView } from '../generated/MemberView';
 import type { HubEvent } from '../generated/HubEvent';
 import type { HubInfo } from '../generated/HubInfo';
 import type { Node as WireNode } from '../generated/Node';
@@ -47,23 +49,46 @@ export interface ISettingsApi {
   save(settings: Settings): Promise<void>;
 }
 
+// `dc`: the datacenter (a member hub this hub controls) the call is made on; without it, this hub.
 export interface ISourcesApi {
+  /** This hub's sources and those of its datacenters, each of the latter with its `dc`. */
   list(): Promise<SourceView[]>;
-  add(request: AddSourceRequest): Promise<AddSourceResponse>;
+  add(request: AddSourceRequest, dc?: string): Promise<AddSourceResponse>;
   /** Changes only the name: the agents already installed keep working and nothing is redeployed. */
-  rename(id: string, name: string): Promise<void>;
-  remove(id: string): Promise<void>;
+  rename(id: string, name: string, dc?: string): Promise<void>;
+  remove(id: string, dc?: string): Promise<void>;
   /** Ask the source's agents to run this version; each changes its own image. Progress shows in the source's `upgrade`. */
-  upgrade(id: string, version: string): Promise<void>;
+  upgrade(id: string, version: string, dc?: string): Promise<void>;
 }
 
 export interface IRegistryApi {
-  get(): Promise<RegistryView>;
-  save(input: RegistryInput): Promise<RegistryView>;
-  /** Tries the settings as typed (not yet saved) and lists the agent versions the registry holds. */
-  test(input: RegistryInput): Promise<RegistryTest>;
+  get(dc?: string): Promise<RegistryView>;
+  save(input: RegistryInput, dc?: string): Promise<RegistryView>;
+  /** Tries the settings as typed (not yet saved) and lists the agent versions the registry holds. From the datacenter's own network when `dc` is given. */
+  test(input: RegistryInput, dc?: string): Promise<RegistryTest>;
   /** The versions in the saved registry. */
-  versions(): Promise<RegistryTest>;
+  versions(dc?: string): Promise<RegistryTest>;
+}
+
+/** The pairing code a hub shows while it waits for the master that will manage it. */
+export interface MemberCode {
+  code: string;
+  expiresAt: number;
+  member: MemberView | null;
+}
+
+/** Hubs that manage other hubs (a master and its datacenters) and the hub that is managed (a member). */
+export interface IFederationApi {
+  view(): Promise<FederationView>;
+  /** This hub will be managed by another one: it shows a code and waits. `agentAddress`: where the agents of this hub find it. */
+  enableMember(agentAddress: string): Promise<MemberCode>;
+  newCode(): Promise<MemberCode>;
+  /** Nobody came: back to being a hub on its own. */
+  disableMember(): Promise<void>;
+  addDatacenter(input: { name: string; address: string; code: string }): Promise<FederationView>;
+  updateDatacenter(id: string, patch: { name?: string; address?: string }): Promise<FederationView>;
+  /** `released`: the datacenter was told to go back to being a hub on its own; false when it could not be reached. */
+  removeDatacenter(id: string): Promise<{ released: boolean }>;
 }
 
 export interface CommLogQuery {
@@ -105,6 +130,7 @@ export interface IHubClient {
   settings: ISettingsApi;
   sources: ISourcesApi;
   registry: IRegistryApi;
+  federation: IFederationApi;
   commLog: ICommLogApi;
   uptime: IUptimeApi;
   feed: IEventFeed;

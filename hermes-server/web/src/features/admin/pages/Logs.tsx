@@ -9,8 +9,10 @@ import { errorText } from '../../../ui/hooks';
 import { Toggle } from '../../../ui/toggle';
 import { PageHead } from '../PageHead';
 
-const KINDS = [['batch', 'Reports'], ['connected', 'Connected'], ['disconnected', 'Disconnected'], ['resync', 'Resync'], ['upgrade', 'Upgrade'], ['upgrade_status', 'Upgrade status']] as const;
+const KINDS = [['batch', 'Reports'], ['connected', 'Connected'], ['disconnected', 'Disconnected'], ['resync', 'Resync'], ['upgrade', 'Upgrade'], ['upgrade_status', 'Upgrade status'], ['topology', 'Datacenter topology'], ['event', 'Datacenter changes'], ['request', 'Admin requests to a datacenter'], ['response', 'Datacenter answers']] as const;
 const ARROW: Record<string, string> = { in: '→ hub', out: '← agent', link: '⇄' };
+/** The way a message went: an agent of a datacenter reports to that datacenter's hub, which passes it up to this one. */
+const way = (r: { dir: string; via?: string }): string => (r.via && r.dir === 'in' ? `→ ${r.via} → hub` : r.via && r.dir === 'out' ? `← ${r.via} ← agent` : (ARROW[r.dir] ?? r.dir));
 
 const clock = (ts: number): string => {
   const d = new Date(ts);
@@ -110,7 +112,7 @@ export function Logs() {
                         <td className="mono">{clock(r.ts)}</td>
                         <td>{r.sourceName}</td>
                         <td className="mono">{r.agent}</td>
-                        <td className="muted">{ARROW[r.dir] ?? r.dir}</td>
+                        <td className="muted" style={{ whiteSpace: 'nowrap' }}>{way(r)}</td>
                         <td><span className={`kind k-${r.kind}`}>{r.kind.replace('_', ' ')}</span> {r.summary}</td>
                         <td className="muted mono">{size(r.bytes)}</td>
                       </tr>
@@ -125,7 +127,7 @@ export function Logs() {
                 {gone ? <div className="empty">That entry is gone: the log keeps the last {view.capacity}, or {view.minutes} minutes.</div> : null}
                 {entry ? (
                   <>
-                    <p className="muted" style={{ fontSize: 12 }}>{new Date(entry.ts).toLocaleString('en-GB', { hour12: false })} · {entry.sourceName} · {ARROW[entry.dir]} · {size(entry.bytes) || 'no size'}</p>
+                    <p className="muted" style={{ fontSize: 12 }}>{new Date(entry.ts).toLocaleString('en-GB', { hour12: false })} · {entry.sourceName} · {way(entry)} · {size(entry.bytes) || 'no size'}</p>
                     <pre className="code" style={{ maxHeight: '55vh', overflow: 'auto' }}>{json}</pre>
                     <div className="dlg-actions" style={{ justifyContent: 'flex-start' }}>
                       <button className="btn" onClick={() => { void navigator.clipboard?.writeText(json); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>{copied ? 'Copied' : 'Copy JSON'}</button>

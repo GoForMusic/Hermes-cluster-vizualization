@@ -186,14 +186,23 @@ jobs:
         with:
           components: "rustfmt, clippy"
 
+      - name: 🧰 Install coverage tools
+        uses: ./.github/actions/setup-rust-coverage-windows
+
       - name: 🎨 Check formatting
         run: cargo fmt --check
 
       - name: 🧹 Lint (clippy)
         run: cargo clippy --locked -p hermes-swarm -p hermes-agent-windows --all-targets -- -D warnings
 
-      - name: 🧪 Test
-        run: cargo test --locked -p hermes-swarm -p hermes-agent-windows
+      - name: 🧪 Test with coverage
+        run: cargo llvm-cov nextest --locked --profile ci -p hermes-swarm -p hermes-agent-windows --ignore-filename-regex '[/\\](tests|examples)[/\\]' --json --summary-only --output-path target/coverage.json
+
+      - name: 💬 Comment the test report and coverage on the pull request
+        if: always()
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
+        run: python .github/scripts/pr_report.py --key agent-windows --title "🪟 Windows agent (Rust)" --junit target/nextest/ci/junit.xml --coverage target/coverage.json
 
       - name: 🏗️ Build the release binary
         run: cargo build --release --locked -p hermes-agent-windows

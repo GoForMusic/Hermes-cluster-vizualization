@@ -1,6 +1,7 @@
 // Finds out who is looking, loads what they may see and starts following the hub: the steps that come before any screen.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuthStatus } from '../generated/AuthStatus';
+import type { MemberView } from '../generated/MemberView';
 import { HubError } from '../hub/HubClient';
 import { useHub } from '../state/context';
 import { errorText as message } from '../ui/hooks';
@@ -9,6 +10,10 @@ export type Phase =
   | { kind: 'loading' }
   | { kind: 'setup' }
   | { kind: 'login' }
+  /** This hub waits for the master that will manage it (and has no admin yet): it shows the pairing code. */
+  | { kind: 'pairing'; member: MemberView }
+  /** Another hub manages this one: there is nothing to log in to. */
+  | { kind: 'managed'; member: MemberView }
   | { kind: 'fatal'; message: string }
   | { kind: 'ready'; auth: AuthStatus };
 
@@ -32,6 +37,8 @@ export function useBoot(admin: boolean): { phase: Phase; reboot: () => void; ref
       let auth: AuthStatus;
       try { auth = await client.auth.status(); } catch (e) { if (!cancelled) setPhase({ kind: 'fatal', message: message(e) }); return; }
       if (cancelled) return;
+      if (auth.member?.state === 'paired') { setPhase({ kind: 'managed', member: auth.member }); return; }
+      if (auth.setupRequired && auth.member?.state === 'waiting') { setPhase({ kind: 'pairing', member: auth.member }); return; }
       if (auth.setupRequired) { setPhase({ kind: 'setup' }); return; }
       if (!auth.authenticated && (adminRef.current || !auth.publicView)) { setPhase({ kind: 'login' }); return; }
       try {

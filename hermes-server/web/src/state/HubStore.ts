@@ -150,24 +150,30 @@ export class HubStore {
     void this.refreshUptime();
   }
 
-  async addSource(request: AddSourceRequest): Promise<AddSourceResponse> {
-    const added = await this.client.sources.add(request);
+  /** The datacenter that hosts a source (none for this hub's own): a call about it has to be made there. */
+  private dcOf(id: string): string | undefined {
+    return this.state.sources.find((s) => s.id === id)?.dc;
+  }
+
+  /** `dc`: add the source to that datacenter instead of to this hub. */
+  async addSource(request: AddSourceRequest, dc?: string): Promise<AddSourceResponse> {
+    const added = await this.client.sources.add(request, dc);
     void this.refreshSources();
     return added;
   }
 
   async upgradeSource(id: string, version: string): Promise<void> {
-    await this.client.sources.upgrade(id, version);
+    await this.client.sources.upgrade(id, version, this.dcOf(id));
     await this.refreshSources();
   }
 
   async renameSource(id: string, name: string): Promise<void> {
-    await this.client.sources.rename(id, name);
+    await this.client.sources.rename(id, name, this.dcOf(id));
     await this.refreshSources();
   }
 
   async removeSource(id: string): Promise<void> {
-    await this.client.sources.remove(id);
+    await this.client.sources.remove(id, this.dcOf(id));
     await this.refreshSources();
   }
 }

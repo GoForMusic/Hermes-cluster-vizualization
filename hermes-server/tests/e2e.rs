@@ -42,6 +42,7 @@ impl Rig {
                 agent_image_windows: String::new(),
                 agent_pull_secret: String::new(),
                 tls_enabled,
+                federation_ca: None,
             },
         );
         hub.spawn_background();

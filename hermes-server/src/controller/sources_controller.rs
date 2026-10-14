@@ -46,10 +46,18 @@ pub(super) async fn list_sources(State(st): State<Shared>, _: Admin) -> Response
                 expected_agent: expected.as_ref().map(ToString::to_string),
                 can_upgrade,
                 upgrade,
+                dc: None,
+                dc_name: None,
             }
         })
         .collect();
-    json_response(StatusCode::OK, views)
+    // the datacenters' sources are listed next to this hub's own, each tagged with its datacenter
+    let mut all: Vec<serde_json::Value> = views
+        .iter()
+        .filter_map(|v| serde_json::to_value(v).ok())
+        .collect();
+    all.extend(st.links.source_views());
+    json_response(StatusCode::OK, all)
 }
 
 fn rand_hex(bytes: usize) -> String {

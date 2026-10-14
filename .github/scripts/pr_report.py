@@ -2,7 +2,7 @@
 """Test report + code coverage of one CI job, as one comment on the pull request (created the first time, updated after that).
 
     pr_report.py --key hub --title "Hub (Rust)" --junit target/nextest/ci/junit.xml --coverage cov.json --coverage-format llvm
-    pr_report.py --key agent-windows --title "Windows agent (Rust)" --junit target/nextest/ci/junit.xml     # no --coverage: the tests only see what compiles here
+    pr_report.py --key agent-windows --title "Windows agent (Rust)" --junit target/nextest/ci/junit.xml --coverage cov.json   # from the Windows runner
     pr_report.py --key web --title "Web (TypeScript)" --junit junit.xml --coverage coverage/coverage-summary.json --coverage-format vitest
 
 JUnit comes from cargo-nextest and from vitest; coverage from `cargo llvm-cov --json --summary-only` (llvm) or vitest's json-summary (vitest).
@@ -170,6 +170,9 @@ def post(markdown, key):
 
 
 def main():
+    # the report has emoji in it, and Python on a Windows runner writes to the console in cp1252, which cannot hold them
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--key", required=True)
     parser.add_argument("--title", required=True)
@@ -182,7 +185,7 @@ def main():
     print(markdown)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
-        with open(summary, "a") as f:
+        with open(summary, "a", encoding="utf-8") as f:
             f.write(markdown)
     try:
         post(markdown, args.key)

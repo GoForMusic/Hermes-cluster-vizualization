@@ -4,7 +4,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
 use hermes_proto::v1::agent_service_server::{AgentService, AgentServiceServer};
 use hermes_proto::v1::{AgentMessage, Hello, HubMessage, Resync, agent_message, hub_message};
 use prost::Message;
@@ -31,14 +30,14 @@ pub(super) fn routes(
     ingest: Arc<dyn IIngestService>,
     upgrades: SharedUpgrades,
     log: SharedCommLog,
-) -> Router {
+) -> tonic::service::Routes {
     let service = AgentServiceServer::new(Agents {
         ingest,
         upgrades,
         log,
     })
     .max_decoding_message_size(MAX_MESSAGE);
-    tonic::service::Routes::new(service).into_axum_router()
+    tonic::service::Routes::new(service)
 }
 
 struct Agents {
@@ -174,6 +173,7 @@ impl Trail<'_> {
             summary,
             bytes,
             body: body(),
+            via: String::new(),
         });
     }
 }

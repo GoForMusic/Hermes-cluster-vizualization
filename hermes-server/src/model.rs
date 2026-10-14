@@ -10,6 +10,7 @@ mod alert;
 mod auth_status;
 mod comm_log;
 mod edge;
+mod federation;
 mod flow_line;
 mod hub_event;
 mod hub_info;
@@ -28,6 +29,10 @@ pub use alert::{Alert, Severity};
 pub use auth_status::AuthStatus;
 pub use comm_log::{CommLogEntry, CommLogRow, CommLogSwitch, CommLogView};
 pub use edge::Edge;
+pub use federation::{
+    DEFAULT_NAME as DEFAULT_DC_NAME, Datacenter, DatacenterView, FederationConfig, FederationView,
+    MEMBER_PAIRED, MEMBER_WAITING, MemberConfig, MemberView,
+};
 pub use flow_line::FlowLine;
 pub use hub_event::HubEvent;
 pub use hub_info::HubInfo;

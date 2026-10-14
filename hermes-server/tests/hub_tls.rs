@@ -47,6 +47,7 @@ impl TlsRig {
                 agent_image_windows: String::new(),
                 agent_pull_secret: String::new(),
                 tls_enabled: true,
+                federation_ca: None,
             },
         );
         hub.spawn_background();
