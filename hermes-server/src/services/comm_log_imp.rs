@@ -7,10 +7,11 @@
 //! * without any token: a batch carries none, and the session's own token is never passed in.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
+use tokio::sync::broadcast;
 
 use crate::model::{CommLogEntry, CommLogRow, CommLogView};
 
@@ -20,6 +21,7 @@ pub const KEPT_MINUTES: u32 = 15;
 const MAX_BODY: usize = 64 * 1024;
 
 /// What a caller hands in. Built only when the log is on (`enabled()`), because the content can be costly to make.
+#[derive(Clone)]
 pub struct NewEntry {
     pub ts: i64,
     pub source: String,
@@ -30,6 +32,14 @@ pub struct NewEntry {
     pub summary: String,
     pub bytes: u64,
     pub body: Value,
+    /// The hub an agent's message came through to get here (a datacenter's hub); empty when the agent reports to this hub itself.
+    pub via: String,
+}
+
+/// What a hub that is managed by another one sends up: its log, as it is made.
+pub enum LogItem {
+    Entry(NewEntry),
+    Heartbeat,
 }
 
 pub trait ICommLog: Send + Sync {
@@ -39,6 +49,8 @@ pub trait ICommLog: Send + Sync {
     fn record(&self, entry: NewEntry);
     /// An empty batch: counted, never listed.
     fn heartbeat(&self);
+    /// Everything recorded from now on, for a hub that passes its log up to the hub that manages it.
+    fn subscribe(&self) -> broadcast::Receiver<Arc<LogItem>>;
     /// Newest first, only the ones newer than `since`, optionally of one source / kind / containing `q` anywhere (also in the content).
     fn list(&self, since: u64, source: &str, kind: &str, q: &str, limit: usize) -> CommLogView;
     fn get(&self, id: u64) -> Option<CommLogEntry>;
@@ -58,11 +70,15 @@ pub struct CommLogImp {
     next: AtomicU64,
     heartbeats: AtomicU64,
     ring: Mutex<VecDeque<Kept>>,
+    passed_up: Option<broadcast::Sender<Arc<LogItem>>>,
 }
 
 impl CommLogImp {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            passed_up: Some(broadcast::channel(256).0),
+            ..Self::default()
+        }
     }
 
     fn ring(&self) -> std::sync::MutexGuard<'_, VecDeque<Kept>> {
@@ -116,7 +132,13 @@ impl ICommLog for CommLogImp {
             return;
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        let body = capped(e.body);
+        let body = capped(e.body.clone());
+        if let Some(tx) = self.passed_up.as_ref().filter(|tx| tx.receiver_count() > 0) {
+            let _ = tx.send(Arc::new(LogItem::Entry(NewEntry {
+                body: body.clone(),
+                ..e.clone()
+            })));
+        }
         let row = CommLogRow {
             id,
             ts: e.ts,
@@ -127,6 +149,7 @@ impl ICommLog for CommLogImp {
             kind: e.kind.into(),
             summary: e.summary,
             bytes: e.bytes,
+            via: e.via,
         };
         let haystack = format!(
             "{} {} {} {} {} {}",
@@ -148,7 +171,16 @@ impl ICommLog for CommLogImp {
     fn heartbeat(&self) {
         if self.enabled() {
             self.heartbeats.fetch_add(1, Ordering::Relaxed);
+            if let Some(tx) = self.passed_up.as_ref().filter(|tx| tx.receiver_count() > 0) {
+                let _ = tx.send(Arc::new(LogItem::Heartbeat));
+            }
         }
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<Arc<LogItem>> {
+        self.passed_up
+            .as_ref()
+            .map_or_else(|| broadcast::channel(1).1, broadcast::Sender::subscribe)
     }
 
     fn list(&self, since: u64, source: &str, kind: &str, q: &str, limit: usize) -> CommLogView {

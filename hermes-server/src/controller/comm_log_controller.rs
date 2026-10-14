@@ -46,6 +46,7 @@ pub(super) async fn switch_log(
         Err(r) => return r,
     };
     st.comm_log.set_enabled(s.enabled);
+    st.links.set_log(s.enabled); // the datacenters record and send up what their agents say, or stop
     tracing::info!(
         "{} turned the communication log {}",
         user.username,

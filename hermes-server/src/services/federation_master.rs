@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 use hermes_proto::FEDERATION_PROTOCOL;
 use hermes_proto::v1::federation_service_client::FederationServiceClient;
 use hermes_proto::v1::{
-    MasterHello, MasterMessage, MemberHello, Release, Request as LinkRequest, master_message,
-    member_message,
+    MasterHello, MasterMessage, MemberHello, Release, Request as LinkRequest, SetLog,
+    master_message, member_message,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -170,6 +170,7 @@ impl MasterLinks {
             summary: summary(),
             bytes: bytes as u64,
             body: body(),
+            via: String::new(),
         });
     }
 
@@ -343,6 +344,22 @@ impl MasterLinks {
             }
         }
         out
+    }
+
+    /// The master's communication log was switched on or off: every connected datacenter records what its agents say and sends it up, or stops.
+    pub fn set_log(&self, on: bool) {
+        let dcs: Vec<Arc<Dc>> = self
+            .dcs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect();
+        for dc in dcs {
+            if let Some(tx) = dc.lock().tx.clone() {
+                let _ = tx.try_send(set_log(on));
+            }
+        }
     }
 
     /// The datacenter was renamed in the settings.
@@ -591,6 +608,9 @@ impl MasterLinks {
                 s.agent_address = h.agent_address;
                 s.tx = Some(tx.clone());
                 drop(s);
+                if self.log.enabled() {
+                    let _ = tx.try_send(set_log(true));
+                }
                 self.store.publish(&json!({"type": "sources"}));
             }
             Message::Topology(t) => {
@@ -678,6 +698,34 @@ impl MasterLinks {
                     self.store.publish(&json!({"type": "sources"}));
                 }
             }
+            Message::Log(l) => {
+                if !self.log.enabled() {
+                    return;
+                }
+                if l.heartbeats > 0 {
+                    for _ in 0..l.heartbeats.min(1000) {
+                        self.log.heartbeat();
+                    }
+                    return;
+                }
+                let (name, dir, kind) = (
+                    dc.lock().name.clone(),
+                    static_str(&l.dir),
+                    static_str_kind(&l.kind),
+                );
+                self.log.record(NewEntry {
+                    ts: l.ts,
+                    source: l.source,
+                    source_name: l.source_name,
+                    agent: l.agent,
+                    dir,
+                    kind,
+                    summary: l.summary,
+                    bytes: l.bytes,
+                    body: serde_json::from_slice(&l.body).unwrap_or(Value::Null),
+                    via: name,
+                });
+            }
             Message::Paired(_) => {}
         }
     }
@@ -743,6 +791,37 @@ fn view_of(
         agent_address: agent_address.to_string(),
         sources,
     }
+}
+
+fn set_log(enabled: bool) -> MasterMessage {
+    MasterMessage {
+        message: Some(master_message::Message::SetLog(SetLog { enabled })),
+    }
+}
+
+/// The log keeps `dir` and `kind` as fixed words: what a datacenter sends is one of them or is kept as a plain note.
+fn static_str(dir: &str) -> &'static str {
+    match dir {
+        "out" => "out",
+        "link" => "link",
+        _ => "in",
+    }
+}
+
+fn static_str_kind(kind: &str) -> &'static str {
+    const KNOWN: [&str; 6] = [
+        "batch",
+        "connected",
+        "disconnected",
+        "resync",
+        "upgrade",
+        "upgrade_status",
+    ];
+    KNOWN
+        .iter()
+        .find(|k| **k == kind)
+        .copied()
+        .unwrap_or("batch")
 }
 
 /// An error and what caused it, in one line: tonic's own text is just "transport error", and the cause (an unknown certificate authority, a

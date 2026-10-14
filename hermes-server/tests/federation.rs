@@ -353,6 +353,47 @@ async fn a_member_is_controlled_from_the_master_and_what_it_sees_shows_up_there(
     assert!(has("response", "answer 201"), "{rows:?}");
     assert!(!log.to_string().contains(&token), "no token in the log");
 
+    // and the first half too, with its content: the member's agent said it to the member, which passed it up (agent -> dc2 -> dc1)
+    eventually(
+        "the agent's batch is in this hub's log, through dc2",
+        || async {
+            let log: Value = master.get("/api/comm-log").await.json().await.unwrap();
+            log["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["via"] == "dc2" && r["kind"] == "batch" && r["agent"] == "pod-1")
+        },
+    )
+    .await;
+    let log: Value = master.get("/api/comm-log").await.json().await.unwrap();
+    let batch = log["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["via"] == "dc2" && r["kind"] == "batch")
+        .unwrap();
+    let entry: Value = master
+        .get(&format!("/api/comm-log/{}", batch["id"]))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        entry["body"].to_string().contains(&id),
+        "the content of the batch is there: {entry}"
+    );
+    assert!(!entry.to_string().contains(&token), "and still no token");
+    // the log of the member was switched on by the master, and goes off with it
+    let r = master
+        .send(
+            reqwest::Method::PUT,
+            "/api/comm-log",
+            json!({"enabled": false}),
+        )
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+
     // taking the datacenter away lets the member go back to being on its own
     let r = master
         .send(

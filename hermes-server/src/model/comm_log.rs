@@ -21,6 +21,10 @@ pub struct CommLogRow {
     pub summary: String,
     #[ts(type = "number")]
     pub bytes: u64,
+    /// The datacenter whose hub the message came through to get here: `agent → dc2 → this hub`. Absent for an agent that reports to this hub itself.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub via: String,
 }
 
 /// The log as the admin page reads it.

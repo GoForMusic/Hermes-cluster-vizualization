@@ -13,6 +13,7 @@ fn entry(ts: i64, agent: &str, kind: &'static str, body: Value) -> NewEntry {
         summary: "snapshot ×1".into(),
         bytes: 10,
         body,
+        via: String::new(),
     }
 }
 

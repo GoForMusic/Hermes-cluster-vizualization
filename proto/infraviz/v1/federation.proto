@@ -24,6 +24,8 @@ message MasterMessage {
     Request request = 2;
     // The master is removing this datacenter: the member goes back to being a standalone hub.
     Release release = 3;
+    // The master's communication log was switched on or off: the member records what its agents say and sends it up (or stops).
+    SetLog set_log = 4;
   }
 }
 
@@ -49,6 +51,10 @@ message Request {
 
 message Release {}
 
+message SetLog {
+  bool enabled = 1;
+}
+
 // ---- member -> master --------------------------------------------------------------------------------------
 
 message MemberMessage {
@@ -63,6 +69,8 @@ message MemberMessage {
     Sources sources = 5;
     // Only on the pairing connection: the token the master uses from now on.
     Paired paired = 6;
+    // One line of the member's communication log (what an agent of the member said, or the member said to it), while the master asked for it.
+    LogEntry log = 7;
   }
 }
 
@@ -104,4 +112,20 @@ message Sources {
 
 message Paired {
   string token = 1;
+}
+
+message LogEntry {
+  int64 ts = 1;
+  string source = 2;
+  string source_name = 3;
+  string agent = 4;
+  // `in` (agent to hub) or `out` (hub to agent) or `link`.
+  string dir = 5;
+  string kind = 6;
+  string summary = 7;
+  uint64 bytes = 8;
+  // JSON, the content as the member's log keeps it (never a token).
+  bytes body = 9;
+  // When not 0 this is not an entry: this many empty heartbeats of the member's agents, counted and not listed.
+  uint64 heartbeats = 10;
 }

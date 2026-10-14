@@ -139,14 +139,13 @@ describe('sources on a datacenter', () => {
   });
 });
 
-describe('Logs of a datacenter', () => {
-  it('reads the traffic of the datacenter\'s own hub, where its agents report', async () => {
+describe('Logs with a datacenter in it', () => {
+  it('shows the way a datacenter\'s agent message came: agent → dc2 → this hub, and a local one straight to this hub', async () => {
     const { Logs } = await import('../features/admin/pages/Logs');
-    const { hub } = await renderWithHub(<Logs />, { prepare: withDc2 });
-    const user = userEvent.setup();
-    await user.selectOptions(await screen.findByLabelText('Hub'), 'dc2');
-    await waitFor(() => expect(hub.calls.some((c) => c.endsWith('@d1') && c.startsWith('commLog.list'))).toBe(true));
-    await user.click(screen.getByLabelText(/Record the agents/));
-    await waitFor(() => expect(hub.calls).toContain('commLog.enable:true@d1'));
+    const row = (id: number, via?: string) => ({ id, ts: 1_700_000_000_000, source: 's1', sourceName: 'lab', agent: id === 1 ? 'pod-a' : 'pod-b', dir: 'in', kind: 'batch', summary: 'alive ×1', bytes: 100, ...(via ? { via } : {}) });
+    const { hub } = await renderWithHub(<Logs />, { prepare: (h) => { h.commLog = { ...h.commLog, enabled: true, entries: [row(1, 'dc2'), row(2)] }; } });
+    await waitFor(() => expect(hub.calls.some((c) => c.startsWith('commLog.list'))).toBe(true));
+    expect(await screen.findByText('→ dc2 → hub')).toBeInTheDocument();
+    expect(screen.getByText('→ hub')).toBeInTheDocument();
   });
 });

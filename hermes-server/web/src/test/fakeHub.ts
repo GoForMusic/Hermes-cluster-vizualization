@@ -103,8 +103,8 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
       removeDatacenter: async (id) => { note(`federation.remove:${id}`); hub.federation = { ...hub.federation, datacenters: hub.federation.datacenters.filter((d) => d.id !== id) }; return { released: true }; },
     },
     commLog: {
-      list: async (q, dc) => {
-        note(`commLog.list:${q?.source ?? ''}:${q?.kind ?? ''}:${q?.q ?? ''}${dc ? `@${dc}` : ''}`);
+      list: async (q) => {
+        note(`commLog.list:${q?.source ?? ''}:${q?.kind ?? ''}:${q?.q ?? ''}`);
         return hub.commLog;
       },
       get: async (id) => {
@@ -112,7 +112,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
         if (!row) throw new Error('that entry is gone');
         return { ...row, body: hub.bodies[id] ?? null } as CommLogEntry;
       },
-      enable: async (on, dc) => { note(`commLog.enable:${on}${dc ? `@${dc}` : ''}`); hub.commLog = { ...hub.commLog, enabled: on, entries: on ? hub.commLog.entries : [] }; },
+      enable: async (on) => { note(`commLog.enable:${on}`); hub.commLog = { ...hub.commLog, enabled: on, entries: on ? hub.commLog.entries : [] }; },
       clear: async () => { note('commLog.clear'); hub.commLog = { ...hub.commLog, entries: [] }; },
     },
     uptime: { load: async (span) => { note(`uptime:${span}`); return hub.uptime; } },

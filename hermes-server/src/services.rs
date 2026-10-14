@@ -17,7 +17,7 @@ mod store_imp;
 mod upgrade_service_imp;
 
 pub use auth_imp::{AuthError, AuthImp, IAuth, SESSION_TTL_MS};
-pub use comm_log_imp::{CommLogImp, ICommLog, NewEntry, SharedCommLog, describe_batch};
+pub use comm_log_imp::{CommLogImp, ICommLog, LogItem, NewEntry, SharedCommLog, describe_batch};
 pub use engine_imp::{EngineImp, IEngine};
 pub use federation_imp::{CODE_TTL_MS, FedError, FederationImp, IFederation, SharedFederation};
 pub use federation_master::{IRemoteSources, LinkError, MasterLinks};

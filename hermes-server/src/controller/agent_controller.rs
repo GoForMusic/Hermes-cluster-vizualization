@@ -173,6 +173,7 @@ impl Trail<'_> {
             summary,
             bytes,
             body: body(),
+            via: String::new(),
         });
     }
 }

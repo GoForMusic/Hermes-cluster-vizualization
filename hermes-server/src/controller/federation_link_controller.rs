@@ -10,8 +10,8 @@ use axum::http::{Request as HttpRequest, header};
 use hermes_proto::FEDERATION_PROTOCOL;
 use hermes_proto::v1::federation_service_server::{FederationService, FederationServiceServer};
 use hermes_proto::v1::{
-    LiveEvent, MasterMessage, MemberHello, MemberMessage, Paired, Response as LinkResponse,
-    SourceTopology, Sources, Topology, master_message, member_message,
+    LiveEvent, LogEntry, MasterMessage, MemberHello, MemberMessage, Paired,
+    Response as LinkResponse, SourceTopology, Sources, Topology, master_message, member_message,
 };
 use serde_json::{Value, json};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -23,7 +23,7 @@ use tracing::{info, warn};
 
 use super::{LINK_HEADER, Shared};
 use crate::database::now_ms;
-use crate::services::FedError;
+use crate::services::{FedError, LogItem};
 
 /// A first snapshot of a big cluster is far above tonic's default limit of 4 MiB.
 const MAX_MESSAGE: usize = 32 * 1024 * 1024;
@@ -35,7 +35,7 @@ const FLUSH_EVERY: Duration = Duration::from_millis(250);
 const SOURCES_EVERY: Duration = Duration::from_secs(5);
 const BODY_LIMIT: usize = 32 * 1024 * 1024;
 
-/// The admin calls a master may make on a member: managing its sources and registry, reading its agents' traffic log, and where its agents find it. Nothing else of the
+/// The admin calls a master may make on a member: managing its sources and registry, and where its agents find it (its agents' traffic log comes up the link by itself while the master's log is on). Nothing else of the
 /// admin API (no logins, no settings, and not the release, which has its own message).
 pub(super) fn link_allowed(method: &str, path: &str) -> bool {
     let path = path.split('?').next().unwrap_or_default();
@@ -48,8 +48,6 @@ pub(super) fn link_allowed(method: &str, path: &str) -> bool {
         | ("GET" | "PUT" | "DELETE", ["api", "registry"])
         | ("POST", ["api", "registry", "test"])
         | ("GET", ["api", "registry", "versions"])
-        | ("GET" | "PUT" | "DELETE", ["api", "comm-log"])
-        | ("GET", ["api", "comm-log", _])
         | ("PATCH", ["api", "federation", "member"]) => true,
         ("PATCH" | "DELETE", ["api", "sources", id]) => !id.is_empty(),
         ("POST", ["api", "sources", id, "upgrade"]) => !id.is_empty(),
@@ -226,6 +224,9 @@ impl Session {
             }
         }
         let (mut topology_dirty, mut sources_dirty) = (false, false);
+        // while the master's log is on, this hub's log is on too and passed up: what its agents say, with the content
+        let mut log_rx: Option<broadcast::Receiver<std::sync::Arc<LogItem>>> = None;
+        let mut heartbeats = 0_u64;
         let mut flush = tokio::time::interval(FLUSH_EVERY);
         let mut last_sources = tokio::time::Instant::now();
         loop {
@@ -240,6 +241,11 @@ impl Session {
                                 warn!("cannot release this hub: {e}");
                             }
                             return;
+                        }
+                        master_message::Message::SetLog(l) => {
+                            self.state.comm_log.set_enabled(l.enabled);
+                            log_rx = l.enabled.then(|| self.state.comm_log.subscribe());
+                            heartbeats = 0;
                         }
                         master_message::Message::Hello(_) => {}
                     }
@@ -267,9 +273,43 @@ impl Session {
                     }
                     Err(broadcast::error::RecvError::Closed) => return,
                 },
+                item = async {
+                    match log_rx.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => match item {
+                    Ok(item) => match &*item {
+                        LogItem::Heartbeat => heartbeats += 1,
+                        LogItem::Entry(e) => {
+                            // a lost line is not worth holding the link up for
+                            let _ = self.tx.try_send(message(member_message::Message::Log(LogEntry {
+                                ts: e.ts,
+                                source: e.source.clone(),
+                                source_name: e.source_name.clone(),
+                                agent: e.agent.clone(),
+                                dir: e.dir.to_string(),
+                                kind: e.kind.to_string(),
+                                summary: e.summary.clone(),
+                                bytes: e.bytes,
+                                body: serde_json::to_vec(&e.body).unwrap_or_default(),
+                                heartbeats: 0,
+                            })));
+                        }
+                    },
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => log_rx = None,
+                },
                 _ = flush.tick() => {
                     if *self.generation.borrow() != self.mine {
                         return; // another link replaced this one
+                    }
+                    if heartbeats > 0 {
+                        let _ = self.tx.try_send(message(member_message::Message::Log(LogEntry {
+                            heartbeats,
+                            ..Default::default()
+                        })));
+                        heartbeats = 0;
                     }
                     if topology_dirty {
                         topology_dirty = false;

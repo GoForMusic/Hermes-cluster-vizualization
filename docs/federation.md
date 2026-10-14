@@ -61,13 +61,12 @@ too, for a trusted network.
 
 ## Following the traffic: agent → child hub → parent hub
 
-Logs (Settings of the log is per hub) is the agents' communication log. An agent reports to the hub next to it, so the two halves are in two places:
-
-- **agent → child hub**: in the child's own log. On the parent, Logs has a *Hub* selector; choosing the datacenter reads (and switches on or off)
-  the log of the child hub through the link.
-- **child hub → parent hub**: in the parent's own log, as `hub dc2` lines: the link opening and closing, each topology that came over it, the
-  changes it carried, and every admin request the parent made (method and path, and the status of the answer, never the body, which can hold a
-  registry password). Metrics and the periodic source list are only counted as heartbeats.
+Logs on the parent is **one list** for all of it. Switching the log on there makes every connected child record what its agents say and send it up
+the link, with its content in the entry's body, so a line reads `dc2-box → dc2 → hub` for an agent of a datacenter and `local-box → hub` for one
+that reports to the parent itself. Next to them are the `hub dc2` lines of the link itself: opening and closing, each topology that came over it,
+and every admin request the parent made (method, path and the status of the answer, never the body, which can hold a registry password).
+Metrics and the periodic source list are only counted as heartbeats. Switching the log off there switches the children's off and forgets what they
+kept. Tokens are never in it.
 
 ## Getting a member back
 

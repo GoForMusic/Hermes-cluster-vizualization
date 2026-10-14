@@ -7,11 +7,12 @@ import type { CommLogView } from '../../../generated/CommLogView';
 import { useClient, useHubState } from '../../../state/context';
 import { errorText } from '../../../ui/hooks';
 import { Toggle } from '../../../ui/toggle';
-import { useFederation } from '../../federation/useFederation';
 import { PageHead } from '../PageHead';
 
 const KINDS = [['batch', 'Reports'], ['connected', 'Connected'], ['disconnected', 'Disconnected'], ['resync', 'Resync'], ['upgrade', 'Upgrade'], ['upgrade_status', 'Upgrade status'], ['topology', 'Datacenter topology'], ['event', 'Datacenter changes'], ['request', 'Admin requests to a datacenter'], ['response', 'Datacenter answers']] as const;
 const ARROW: Record<string, string> = { in: '→ hub', out: '← agent', link: '⇄' };
+/** The way a message went: an agent of a datacenter reports to that datacenter's hub, which passes it up to this one. */
+const way = (r: { dir: string; via?: string }): string => (r.via && r.dir === 'in' ? `→ ${r.via} → hub` : r.via && r.dir === 'out' ? `← ${r.via} ← agent` : (ARROW[r.dir] ?? r.dir));
 
 const clock = (ts: number): string => {
   const d = new Date(ts);
@@ -21,10 +22,7 @@ const size = (bytes: number): string => (bytes ? (bytes < 1024 ? `${bytes} B` : 
 
 export function Logs() {
   const client = useClient();
-  const allSources = useHubState((s) => s.sources);
-  const { view: federation } = useFederation();
-  const [dc, setDc] = useState(''); // '' is this hub: the agents of a datacenter report to that datacenter's hub, so its traffic is read there
-  const sources = allSources.filter((s) => (s.dc ?? '') === dc);
+  const sources = useHubState((s) => s.sources);
   const [view, setView] = useState<CommLogView | null>(null);
   const [error, setError] = useState('');
   const [source, setSource] = useState('');
@@ -37,8 +35,8 @@ export function Logs() {
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
-    try { setView(await client.commLog.list({ source, kind, q: text, limit: 300 }, dc || undefined)); setError(''); } catch (e) { setError(errorText(e)); }
-  }, [client, source, kind, text, dc]);
+    try { setView(await client.commLog.list({ source, kind, q: text, limit: 300 })); setError(''); } catch (e) { setError(errorText(e)); }
+  }, [client, source, kind, text]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -52,14 +50,14 @@ export function Logs() {
     setGone(false);
     if (open == null) return;
     let live = true;
-    void client.commLog.get(open, dc || undefined).then((e) => { if (live) setEntry(e); }).catch(() => { if (live) setGone(true); });
+    void client.commLog.get(open).then((e) => { if (live) setEntry(e); }).catch(() => { if (live) setGone(true); });
     return () => { live = false; };
-  }, [client, open, dc]);
+  }, [client, open]);
 
   const switchTo = async (on: boolean) => {
-    try { await client.commLog.enable(on, dc || undefined); if (!on) setOpen(null); await load(); } catch (e) { setError(errorText(e)); }
+    try { await client.commLog.enable(on); if (!on) setOpen(null); await load(); } catch (e) { setError(errorText(e)); }
   };
-  const clear = async () => { try { await client.commLog.clear(dc || undefined); setOpen(null); await load(); } catch (e) { setError(errorText(e)); } };
+  const clear = async () => { try { await client.commLog.clear(); setOpen(null); await load(); } catch (e) { setError(errorText(e)); } };
 
   const rows: CommLogRow[] = view?.entries ?? [];
   const json = entry ? JSON.stringify(entry.body, null, 2) : '';
@@ -75,15 +73,6 @@ export function Logs() {
   return (
     <>
       <PageHead title="Logs" />
-      {federation.datacenters.length ? (
-        <div className="filters" style={{ marginBottom: 12 }}>
-          <select aria-label="Hub" value={dc} onChange={(e) => { setDc(e.target.value); setSource(''); setOpen(null); setView(null); }}>
-            <option value="">{federation.name || 'this hub'} (this hub)</option>
-            {federation.datacenters.map((d) => <option key={d.id} value={d.id} disabled={d.state !== 'connected'}>{d.name}{d.state === 'connected' ? '' : ` (${d.state})`}</option>)}
-          </select>
-          <span className="muted">Agents report to the hub next to them: a datacenter&apos;s traffic is recorded on its own hub.</span>
-        </div>
-      ) : null}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ border: 0, padding: 0 }}>
           <div>
@@ -123,7 +112,7 @@ export function Logs() {
                         <td className="mono">{clock(r.ts)}</td>
                         <td>{r.sourceName}</td>
                         <td className="mono">{r.agent}</td>
-                        <td className="muted">{ARROW[r.dir] ?? r.dir}</td>
+                        <td className="muted" style={{ whiteSpace: 'nowrap' }}>{way(r)}</td>
                         <td><span className={`kind k-${r.kind}`}>{r.kind.replace('_', ' ')}</span> {r.summary}</td>
                         <td className="muted mono">{size(r.bytes)}</td>
                       </tr>
@@ -138,7 +127,7 @@ export function Logs() {
                 {gone ? <div className="empty">That entry is gone: the log keeps the last {view.capacity}, or {view.minutes} minutes.</div> : null}
                 {entry ? (
                   <>
-                    <p className="muted" style={{ fontSize: 12 }}>{new Date(entry.ts).toLocaleString('en-GB', { hour12: false })} · {entry.sourceName} · {ARROW[entry.dir]} · {size(entry.bytes) || 'no size'}</p>
+                    <p className="muted" style={{ fontSize: 12 }}>{new Date(entry.ts).toLocaleString('en-GB', { hour12: false })} · {entry.sourceName} · {way(entry)} · {size(entry.bytes) || 'no size'}</p>
                     <pre className="code" style={{ maxHeight: '55vh', overflow: 'auto' }}>{json}</pre>
                     <div className="dlg-actions" style={{ justifyContent: 'flex-start' }}>
                       <button className="btn" onClick={() => { void navigator.clipboard?.writeText(json); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>{copied ? 'Copied' : 'Copy JSON'}</button>
