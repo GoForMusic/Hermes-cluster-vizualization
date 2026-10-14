@@ -186,6 +186,15 @@ async fn a_member_is_controlled_from_the_master_and_what_it_sees_shows_up_there(
         v["datacenters"][0]["state"] == "connected"
     })
     .await;
+    // the master records what comes over the link, next to what its own agents say
+    let r = master
+        .send(
+            reqwest::Method::PUT,
+            "/api/comm-log",
+            json!({"enabled": true}),
+        )
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
     let v: Value = master.get("/api/federation").await.json().await.unwrap();
     assert_eq!(
         v["datacenters"][0]["agentAddress"], "http://agents.dc2.example:8765",
@@ -328,6 +337,21 @@ async fn a_member_is_controlled_from_the_master_and_what_it_sees_shows_up_there(
         snap["nodes"].as_array().unwrap().is_empty()
     })
     .await;
+
+    // agent -> child hub -> this hub: the second half is in this hub's log, without the content of what was asked
+    let log: Value = master.get("/api/comm-log").await.json().await.unwrap();
+    let rows = log["entries"].as_array().unwrap();
+    let has = |kind: &str, text: &str| {
+        rows.iter().any(|r| {
+            r["kind"] == kind
+                && r["agent"] == "hub dc2"
+                && r["summary"].as_str().unwrap().contains(text)
+        })
+    };
+    assert!(has("topology", "source"), "{rows:?}");
+    assert!(has("request", "POST /api/sources"), "{rows:?}");
+    assert!(has("response", "answer 201"), "{rows:?}");
+    assert!(!log.to_string().contains(&token), "no token in the log");
 
     // taking the datacenter away lets the member go back to being on its own
     let r = master

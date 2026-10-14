@@ -108,9 +108,11 @@ impl Hub {
         let store: Arc<dyn IStore> = Arc::new(StoreImp::new());
         let guard: Arc<dyn IGuard> = Arc::new(GuardImp::new(store.clone(), db.sources.clone())); // one cluster, one source
         let federation: SharedFederation = Arc::new(FederationImp::new(db.federation.clone()));
+        let comm_log: SharedCommLog = Arc::new(CommLogImp::new());
         let links = Arc::new(MasterLinks::new(
             store.clone(),
             federation.clone(),
+            comm_log.clone(),
             settings.federation_ca.clone(),
             crate::version::VERSION,
         ));
@@ -138,7 +140,7 @@ impl Hub {
             db,
             guard,
             upgrades: Arc::new(UpgradeServiceImp::new()),
-            comm_log: Arc::new(CommLogImp::new()),
+            comm_log,
             federation,
             links,
             expected_agent: crate::version::image_version(&settings.agent_image),

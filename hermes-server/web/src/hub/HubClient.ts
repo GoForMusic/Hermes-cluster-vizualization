@@ -100,10 +100,11 @@ export interface CommLogQuery {
 
 /** The agent ↔ hub communication log: off until an admin turns it on, kept in memory, never holds a token. */
 export interface ICommLogApi {
-  list(query?: CommLogQuery): Promise<CommLogView>;
-  get(id: number): Promise<CommLogEntry>;
-  enable(on: boolean): Promise<void>;
-  clear(): Promise<void>;
+  /** `dc`: the log of that datacenter's hub, whose agents report there and not here. */
+  list(query?: CommLogQuery, dc?: string): Promise<CommLogView>;
+  get(id: number, dc?: string): Promise<CommLogEntry>;
+  enable(on: boolean, dc?: string): Promise<void>;
+  clear(dc?: string): Promise<void>;
 }
 
 export interface IUptimeApi {

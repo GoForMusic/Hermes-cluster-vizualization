@@ -87,14 +87,14 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       removeDatacenter: (id) => call('DELETE', `/api/federation/datacenters/${encodeURIComponent(id)}`, {}),
     },
     commLog: {
-      list: (query = {}) => {
+      list: (query = {}, dc) => {
         const p = new URLSearchParams();
         for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== '') p.set(k, String(v));
-        return get(`/api/comm-log${p.size ? `?${p}` : ''}`);
+        return get(`${root(dc)}/comm-log${p.size ? `?${p}` : ''}`);
       },
-      get: (id) => get(`/api/comm-log/${id}`),
-      enable: (enabled) => send('PUT', '/api/comm-log', { enabled }),
-      clear: () => send('DELETE', '/api/comm-log'),
+      get: (id, dc) => get(`${root(dc)}/comm-log/${id}`),
+      enable: (enabled, dc) => send('PUT', `${root(dc)}/comm-log`, { enabled }),
+      clear: (dc) => send('DELETE', `${root(dc)}/comm-log`),
     },
     uptime: {
       load: (span, buckets) => get(`/api/uptime?span=${span}&buckets=${buckets}`),

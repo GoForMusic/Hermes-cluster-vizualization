@@ -7,9 +7,10 @@ import type { CommLogView } from '../../../generated/CommLogView';
 import { useClient, useHubState } from '../../../state/context';
 import { errorText } from '../../../ui/hooks';
 import { Toggle } from '../../../ui/toggle';
+import { useFederation } from '../../federation/useFederation';
 import { PageHead } from '../PageHead';
 
-const KINDS = [['batch', 'Reports'], ['connected', 'Connected'], ['disconnected', 'Disconnected'], ['resync', 'Resync'], ['upgrade', 'Upgrade'], ['upgrade_status', 'Upgrade status']] as const;
+const KINDS = [['batch', 'Reports'], ['connected', 'Connected'], ['disconnected', 'Disconnected'], ['resync', 'Resync'], ['upgrade', 'Upgrade'], ['upgrade_status', 'Upgrade status'], ['topology', 'Datacenter topology'], ['event', 'Datacenter changes'], ['request', 'Admin requests to a datacenter'], ['response', 'Datacenter answers']] as const;
 const ARROW: Record<string, string> = { in: '→ hub', out: '← agent', link: '⇄' };
 
 const clock = (ts: number): string => {
@@ -20,7 +21,10 @@ const size = (bytes: number): string => (bytes ? (bytes < 1024 ? `${bytes} B` : 
 
 export function Logs() {
   const client = useClient();
-  const sources = useHubState((s) => s.sources);
+  const allSources = useHubState((s) => s.sources);
+  const { view: federation } = useFederation();
+  const [dc, setDc] = useState(''); // '' is this hub: the agents of a datacenter report to that datacenter's hub, so its traffic is read there
+  const sources = allSources.filter((s) => (s.dc ?? '') === dc);
   const [view, setView] = useState<CommLogView | null>(null);
   const [error, setError] = useState('');
   const [source, setSource] = useState('');
@@ -33,8 +37,8 @@ export function Logs() {
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
-    try { setView(await client.commLog.list({ source, kind, q: text, limit: 300 })); setError(''); } catch (e) { setError(errorText(e)); }
-  }, [client, source, kind, text]);
+    try { setView(await client.commLog.list({ source, kind, q: text, limit: 300 }, dc || undefined)); setError(''); } catch (e) { setError(errorText(e)); }
+  }, [client, source, kind, text, dc]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -48,14 +52,14 @@ export function Logs() {
     setGone(false);
     if (open == null) return;
     let live = true;
-    void client.commLog.get(open).then((e) => { if (live) setEntry(e); }).catch(() => { if (live) setGone(true); });
+    void client.commLog.get(open, dc || undefined).then((e) => { if (live) setEntry(e); }).catch(() => { if (live) setGone(true); });
     return () => { live = false; };
-  }, [client, open]);
+  }, [client, open, dc]);
 
   const switchTo = async (on: boolean) => {
-    try { await client.commLog.enable(on); if (!on) setOpen(null); await load(); } catch (e) { setError(errorText(e)); }
+    try { await client.commLog.enable(on, dc || undefined); if (!on) setOpen(null); await load(); } catch (e) { setError(errorText(e)); }
   };
-  const clear = async () => { try { await client.commLog.clear(); setOpen(null); await load(); } catch (e) { setError(errorText(e)); } };
+  const clear = async () => { try { await client.commLog.clear(dc || undefined); setOpen(null); await load(); } catch (e) { setError(errorText(e)); } };
 
   const rows: CommLogRow[] = view?.entries ?? [];
   const json = entry ? JSON.stringify(entry.body, null, 2) : '';
@@ -71,6 +75,15 @@ export function Logs() {
   return (
     <>
       <PageHead title="Logs" />
+      {federation.datacenters.length ? (
+        <div className="filters" style={{ marginBottom: 12 }}>
+          <select aria-label="Hub" value={dc} onChange={(e) => { setDc(e.target.value); setSource(''); setOpen(null); setView(null); }}>
+            <option value="">{federation.name || 'this hub'} (this hub)</option>
+            {federation.datacenters.map((d) => <option key={d.id} value={d.id} disabled={d.state !== 'connected'}>{d.name}{d.state === 'connected' ? '' : ` (${d.state})`}</option>)}
+          </select>
+          <span className="muted">Agents report to the hub next to them: a datacenter&apos;s traffic is recorded on its own hub.</span>
+        </div>
+      ) : null}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ border: 0, padding: 0 }}>
           <div>

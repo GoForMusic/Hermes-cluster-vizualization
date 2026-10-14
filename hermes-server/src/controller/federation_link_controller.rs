@@ -35,7 +35,7 @@ const FLUSH_EVERY: Duration = Duration::from_millis(250);
 const SOURCES_EVERY: Duration = Duration::from_secs(5);
 const BODY_LIMIT: usize = 32 * 1024 * 1024;
 
-/// The admin calls a master may make on a member: managing its sources and registry, and where its agents find it. Nothing else of the
+/// The admin calls a master may make on a member: managing its sources and registry, reading its agents' traffic log, and where its agents find it. Nothing else of the
 /// admin API (no logins, no settings, and not the release, which has its own message).
 pub(super) fn link_allowed(method: &str, path: &str) -> bool {
     let path = path.split('?').next().unwrap_or_default();
@@ -48,6 +48,8 @@ pub(super) fn link_allowed(method: &str, path: &str) -> bool {
         | ("GET" | "PUT" | "DELETE", ["api", "registry"])
         | ("POST", ["api", "registry", "test"])
         | ("GET", ["api", "registry", "versions"])
+        | ("GET" | "PUT" | "DELETE", ["api", "comm-log"])
+        | ("GET", ["api", "comm-log", _])
         | ("PATCH", ["api", "federation", "member"]) => true,
         ("PATCH" | "DELETE", ["api", "sources", id]) => !id.is_empty(),
         ("POST", ["api", "sources", id, "upgrade"]) => !id.is_empty(),

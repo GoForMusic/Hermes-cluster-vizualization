@@ -9,7 +9,7 @@ export type CommLogEntry = { body: unknown, id: number, ts: number, source: stri
  */
 dir: string, 
 /**
- * `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`.
+ * `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`; on a link to a datacenter also `topology`, `event`, `request`, `response`.
  */
 kind: string, 
 /**

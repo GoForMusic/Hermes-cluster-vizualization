@@ -25,8 +25,9 @@ use tonic::metadata::MetadataValue;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint};
 use tracing::{info, warn};
 
+use crate::database::now_ms;
 use crate::model::{Datacenter, DatacenterView, Edge, Node, Source};
-use crate::services::{IStore, SharedFederation};
+use crate::services::{IStore, NewEntry, SharedCommLog, SharedFederation};
 
 /// A first snapshot of a big cluster is far above tonic's default limit of 4 MiB.
 const MAX_MESSAGE: usize = 32 * 1024 * 1024;
@@ -97,6 +98,7 @@ struct State {
 }
 
 struct Dc {
+    id: String,
     state: Mutex<State>,
     task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -110,6 +112,9 @@ impl Dc {
 pub struct MasterLinks {
     store: Arc<dyn IStore>,
     fed: SharedFederation,
+    /// The agents' communication log: what comes over a link is in it too, next to what the agents of this hub say, so the whole way
+    /// agent -> child hub -> this hub can be followed. Never the content of an admin request (it can hold a registry password).
+    log: SharedCommLog,
     ca: Option<Vec<u8>>,
     version: String,
     dcs: Mutex<HashMap<String, Arc<Dc>>>,
@@ -127,16 +132,45 @@ impl MasterLinks {
     pub fn new(
         store: Arc<dyn IStore>,
         fed: SharedFederation,
+        log: SharedCommLog,
         ca: Option<Vec<u8>>,
         version: &str,
     ) -> Self {
         Self {
             store,
             fed,
+            log,
             ca,
             version: version.to_string(),
             dcs: Mutex::default(),
         }
+    }
+
+    /// One line in the communication log about the link to a datacenter (when the log is on).
+    fn note(
+        &self,
+        dc: &Dc,
+        dir: &'static str,
+        kind: &'static str,
+        summary: impl FnOnce() -> String,
+        bytes: usize,
+        body: impl FnOnce() -> Value,
+    ) {
+        if !self.log.enabled() {
+            return;
+        }
+        let name = dc.lock().name.clone();
+        self.log.record(NewEntry {
+            ts: now_ms(),
+            source: format!("dc:{}", dc.id),
+            source_name: name.clone(),
+            agent: format!("hub {name}"),
+            dir,
+            kind,
+            summary: summary(),
+            bytes: bytes as u64,
+            body: body(),
+        });
     }
 
     fn dc(&self, id: &str) -> Option<Arc<Dc>> {
@@ -162,6 +196,7 @@ impl MasterLinks {
                 return;
             }
             let dc = Arc::new(Dc {
+                id: id.to_string(),
                 state: Mutex::new(State {
                     name: name.to_string(),
                     phase: Phase::Connecting,
@@ -336,6 +371,15 @@ impl MasterLinks {
             s.pending.insert(request_id, answer);
             (rx, tx, request_id)
         };
+        // only what was asked, never the body: it can hold a registry password
+        self.note(
+            &dc,
+            "out",
+            "request",
+            || format!("{method} {path}"),
+            body.len(),
+            || json!({"id": request_id, "method": method, "path": path}),
+        );
         let message = MasterMessage {
             message: Some(master_message::Message::Request(LinkRequest {
                 id: request_id,
@@ -471,6 +515,14 @@ impl MasterLinks {
             self.store.set_stale(src, true);
         }
         self.store.publish(&json!({"type": "sources"}));
+        self.note(
+            dc,
+            "out",
+            "disconnected",
+            || format!("link lost: {why}"),
+            0,
+            || json!({"why": why}),
+        );
     }
 
     async fn session(&self, cfg: &Datacenter, dc: &Arc<Dc>) -> Result<(), String> {
@@ -496,6 +548,14 @@ impl MasterLinks {
             .map_err(|s| status_text(&s))?
             .into_inner();
         info!("linked to datacenter {} at {}", cfg.name, cfg.address);
+        self.note(
+            dc,
+            "in",
+            "connected",
+            || format!("linked to {}", cfg.address),
+            0,
+            || json!({"address": cfg.address}),
+        );
         loop {
             let next = tokio::time::timeout(SILENT_AFTER, inbound.message())
                 .await
@@ -534,6 +594,27 @@ impl MasterLinks {
                 self.store.publish(&json!({"type": "sources"}));
             }
             Message::Topology(t) => {
+                let (count, bytes) = (
+                    t.sources.len(),
+                    t.sources.iter().map(|s| s.json.len()).sum(),
+                );
+                self.note(
+                    dc,
+                    "in",
+                    "topology",
+                    || {
+                        format!(
+                            "topology ×{count} source{}",
+                            if count == 1 { "" } else { "s" }
+                        )
+                    },
+                    bytes,
+                    || {
+                        json!({"sources": t.sources.iter()
+                            .map(|s| json!({"id": s.id, "bytes": s.json.len()}))
+                            .collect::<Vec<_>>()})
+                    },
+                );
                 let mut seen = HashSet::new();
                 for source in t.sources {
                     let Ok(topo) = serde_json::from_slice::<TopologyJson>(&source.json) else {
@@ -555,16 +636,43 @@ impl MasterLinks {
             }
             Message::Event(e) => {
                 if let Ok(event) = serde_json::from_slice::<Value>(&e.json) {
+                    // metrics come every second: counted like the agents' empty heartbeats, not listed
+                    if event.get("type").and_then(Value::as_str) == Some("metrics") {
+                        self.log.heartbeat();
+                    } else {
+                        let kind = event
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .unwrap_or("event")
+                            .to_string();
+                        self.note(
+                            dc,
+                            "in",
+                            "event",
+                            || format!("{kind} ×1"),
+                            e.json.len(),
+                            || event.clone(),
+                        );
+                    }
                     self.apply_event(&event);
                 }
             }
             Message::Response(r) => {
+                self.note(
+                    dc,
+                    "in",
+                    "response",
+                    || format!("answer {} ({} B)", r.status, r.body.len()),
+                    r.body.len(),
+                    || json!({"id": r.id, "status": r.status, "bytes": r.body.len()}),
+                );
                 let waiting = dc.lock().pending.remove(&r.id);
                 if let Some(answer) = waiting {
                     let _ = answer.send((u16::try_from(r.status).unwrap_or(502), r.body));
                 }
             }
             Message::Sources(s) => {
+                self.log.heartbeat(); // every few seconds, changed or not: counted, not listed
                 if let Ok(Value::Array(list)) = serde_json::from_slice::<Value>(&s.json) {
                     dc.lock().sources = list;
                     self.store.publish(&json!({"type": "sources"}));

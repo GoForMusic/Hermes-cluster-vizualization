@@ -9,7 +9,7 @@ export type CommLogRow = { id: number, ts: number, source: string, sourceName: s
  */
 dir: string, 
 /**
- * `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`.
+ * `batch`, `upgrade_status`, `resync`, `upgrade`, `connected`, `disconnected`; on a link to a datacenter also `topology`, `event`, `request`, `response`.
  */
 kind: string, 
 /**

@@ -138,3 +138,15 @@ describe('sources on a datacenter', () => {
     expect(hub.calls).toContain('sources.remove:s9@d1');
   });
 });
+
+describe('Logs of a datacenter', () => {
+  it('reads the traffic of the datacenter\'s own hub, where its agents report', async () => {
+    const { Logs } = await import('../features/admin/pages/Logs');
+    const { hub } = await renderWithHub(<Logs />, { prepare: withDc2 });
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByLabelText('Hub'), 'dc2');
+    await waitFor(() => expect(hub.calls.some((c) => c.endsWith('@d1') && c.startsWith('commLog.list'))).toBe(true));
+    await user.click(screen.getByLabelText(/Record the agents/));
+    await waitFor(() => expect(hub.calls).toContain('commLog.enable:true@d1'));
+  });
+});
