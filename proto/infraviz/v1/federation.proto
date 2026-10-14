@@ -1,0 +1,107 @@
+// The contract between a master hub and a member hub (a hub in a network zone its agents cannot be reached from the master's).
+//
+// The MASTER dials the MEMBER (that is the direction a firewall between the zones lets through) and keeps ONE stream open:
+// the member sends what it sees, the master sends the admin requests of the person using the master's dashboard.
+//
+// Compatibility rules are those of agent.proto: never reuse or renumber a field, add fields and `oneof` cases only, a receiver ignores
+// what it does not know.
+syntax = "proto3";
+
+package infraviz.v1;
+
+service FederationService {
+  // Authentication: metadata `authorization: Bearer <link token>`. The very first connection of a master carries
+  // `x-pairing-code: <code>` instead, which the member showed to the person setting it up; the member answers with `paired`.
+  // The first message from the master must be `hello`.
+  rpc Link(stream MasterMessage) returns (stream MemberMessage);
+}
+
+// ---- master -> member --------------------------------------------------------------------------------------
+
+message MasterMessage {
+  oneof message {
+    MasterHello hello = 1;
+    Request request = 2;
+    // The master is removing this datacenter: the member goes back to being a standalone hub.
+    Release release = 3;
+  }
+}
+
+message MasterHello {
+  // Version of this contract the master speaks. Starts at 1.
+  uint32 protocol = 1;
+  // Name the master gives this datacenter ("dc2").
+  string datacenter = 2;
+  // Build of the master, e.g. "1.4.2".
+  string version = 3;
+  // What the master hub calls itself ("dc1"): what the member's page says it is managed by.
+  string master = 4;
+}
+
+// An admin call of the master's dashboard, run on the member as if an admin had made it there. Only the paths the member allows.
+message Request {
+  uint64 id = 1;
+  string method = 2;
+  // Path and query, e.g. "/api/sources".
+  string path = 3;
+  bytes body = 4;
+}
+
+message Release {}
+
+// ---- member -> master --------------------------------------------------------------------------------------
+
+message MemberMessage {
+  oneof message {
+    MemberHello hello = 1;
+    // Everything the member knows, source by source. Sent after the hello and again whenever the topology changes.
+    Topology topology = 2;
+    // A small change of the live view (status, meta, metrics, flows), as the JSON event the member's own browsers get.
+    LiveEvent event = 3;
+    Response response = 4;
+    // The member's source list with its agents and upgrades, as `GET /api/sources` answers it. Sent when it changes and every few seconds.
+    Sources sources = 5;
+    // Only on the pairing connection: the token the master uses from now on.
+    Paired paired = 6;
+  }
+}
+
+message MemberHello {
+  uint32 protocol = 1;
+  // Build of the member.
+  string version = 2;
+  // Where the agents of this datacenter reach the member (what an install manifest of a source here has to point at).
+  string agent_address = 3;
+  // What this member can do besides reporting. None yet.
+  repeated string features = 4;
+}
+
+message Topology {
+  repeated SourceTopology sources = 1;
+}
+
+message SourceTopology {
+  string id = 1;
+  // JSON: {"nodes":[...],"edges":[...]} in the shape of the hub's snapshot event.
+  bytes json = 2;
+}
+
+message LiveEvent {
+  // JSON, one event of the hub's live stream.
+  bytes json = 1;
+}
+
+message Response {
+  uint64 id = 1;
+  uint32 status = 2;
+  bytes body = 3;
+}
+
+message Sources {
+  // JSON array.
+  bytes json = 1;
+}
+
+message Paired {
+  string token = 1;
+}

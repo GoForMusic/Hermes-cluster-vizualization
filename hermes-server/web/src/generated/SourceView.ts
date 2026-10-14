@@ -17,4 +17,8 @@ canUpgrade: boolean,
 /**
  * The last version change that was asked for, and how it is going.
  */
-upgrade?: UpgradeView, id: string, name: string, type: string, endpoint: string, auth: string, state: string, info: string, builtin?: boolean, };
+upgrade?: UpgradeView, 
+/**
+ * The datacenter (a member hub this hub controls) that hosts the source; none for this hub's own.
+ */
+dc?: string, dcName?: string, id: string, name: string, type: string, endpoint: string, auth: string, state: string, info: string, builtin?: boolean, };

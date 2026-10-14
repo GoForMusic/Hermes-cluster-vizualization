@@ -7,6 +7,7 @@ import { useClient, useStore, useHubState } from '../../../state/context';
 import { Dialog } from '../../../ui/dialog';
 import { StatusChip } from '../../../ui/status';
 import { errorText, useAsyncSubmit } from '../../../ui/hooks';
+import { useFederation } from '../../federation/useFederation';
 import { PageHead } from '../PageHead';
 
 const STATE_CHIP: Record<string, () => ReactElement> = {
@@ -50,7 +51,7 @@ function SourceCard({ source: s }: { source: SourceView }) {
   const [editing, setEditing] = useState(false);
   return (
     <div className="card src-card">
-      <div className="src-top"><b>{s.name}</b>{(STATE_CHIP[s.state] ?? STATE_CHIP.pending!)()}</div>
+      <div className="src-top"><b>{s.name}{s.dcName ? <span className="dc-tag" title={`Hosted by the datacenter ${s.dcName}`}>{s.dcName}</span> : null}</b>{(STATE_CHIP[s.state] ?? STATE_CHIP.pending!)()}</div>
       <div className="muted">{s.type}</div>
       <div className="src-meta">{s.info || '—'}</div>
       <AgentsLine source={s} />
@@ -154,9 +155,9 @@ function ChangeVersionDialog({ source: s, open, onClose }: { source: SourceView;
     if (!open) return;
     let live = true;
     setChosen('');
-    void client.registry.versions().then((r) => { if (live) setFound(r); }).catch((e: unknown) => { if (live) setFound({ ok: false, message: errorText(e), versions: [] }); });
+    void client.registry.versions(s.dc).then((r) => { if (live) setFound(r); }).catch((e: unknown) => { if (live) setFound({ ok: false, message: errorText(e), versions: [] }); });
     return () => { live = false; };
-  }, [client, open]);
+  }, [client, open, s.dc]);
 
   const { busy, error, submit } = useAsyncSubmit(
     async () => { await store.upgradeSource(s.id, chosen); onClose(); },
@@ -208,7 +209,9 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
   const [windows, setWindows] = useState(false);
   const [upgrades, setUpgrades] = useState(true);
   const [version, setVersion] = useState('');
-  const registry = useRegistryVersions(open);
+  const [dc, setDc] = useState(''); // which hub hosts the source: '' is this one
+  const { view } = useFederation(open);
+  const registry = useRegistryVersions(open, dc || undefined);
   const chosen = type || types[0] || '';
   const kubernetes = chosen.startsWith('Kubernetes');
   const docker = chosen === 'Docker (agent)'; // machines of their own: no swarm, no upgrade from the dashboard yet
@@ -218,7 +221,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
     const added = await store.addSource({
       name, type: chosen, endpoint: '', hubUrl, flows: kubernetes && flows, upgrades: upgrades && !docker,
       version: registry.configured ? version || registry.versions[0] || '' : '', windows: registry.configured && !kubernetes && windows,
-    });
+    }, dc || undefined);
     setName('');
     onAdded(added);
   });
@@ -229,8 +232,17 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
         <h2>Add source</h2>
         <div className="form">
           <label className="f">Name<input type="text" placeholder="e.g. lab-k3s" value={name} onChange={(e) => setName(e.target.value)} /></label>
+          {view.datacenters.length ? (
+            <label className="f">Hosted by
+              <select value={dc} onChange={(e) => { const id = e.target.value; setDc(id); setVersion(''); setHubUrl(view.datacenters.find((d) => d.id === id)?.agentAddress || location.origin); }}>
+                <option value="">{view.name || 'this hub'} (this hub)</option>
+                {view.datacenters.map((d) => <option key={d.id} value={d.id} disabled={d.state !== 'connected'}>{d.name}{d.state === 'connected' ? '' : ` (${d.state})`}</option>)}
+              </select>
+              <span className="muted" style={{ fontSize: 11.5 }}>{dc ? 'The agent reports to the child hub, which sits next to it; this hub shows it and manages it from here.' : 'The agent reports to this hub.'}</span>
+            </label>
+          ) : null}
           <label className="f">Type<select value={chosen} onChange={(e) => setType(e.target.value)}>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
-          <label className="f">Hub address as seen from the agent<input type="text" value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} /></label>
+          <label className="f">{dc ? 'Address of the child hub, as the agent reaches it' : 'Hub address as seen from the agent'}<input type="text" value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} /></label>
           {registry.configured ? (
             <>
               <label className="f">Agent version
@@ -281,7 +293,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
 }
 
 /** Whether a registry is set up, and the agent versions in it: what the Add dialog offers. Looked up each time the dialog opens. */
-function useRegistryVersions(open: boolean): { configured: boolean; implicit: boolean; versions: string[]; message: string } {
+function useRegistryVersions(open: boolean, dc?: string): { configured: boolean; implicit: boolean; versions: string[]; message: string } {
   const client = useClient();
   const [state, setState] = useState({ configured: false, implicit: false, versions: [] as string[], message: '' });
   useEffect(() => {
@@ -289,14 +301,14 @@ function useRegistryVersions(open: boolean): { configured: boolean; implicit: bo
     let live = true;
     void (async () => {
       try {
-        const saved = await client.registry.get();
+        const saved = await client.registry.get(dc);
         if (!saved.url) { if (live) setState({ configured: false, implicit: false, versions: [], message: '' }); return; }
-        const found: RegistryTest = await client.registry.versions().catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e), versions: [] }));
+        const found: RegistryTest = await client.registry.versions(dc).catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e), versions: [] }));
         if (live) setState({ configured: true, implicit: saved.implicit, versions: found.ok ? found.versions : [], message: found.message });
       } catch { if (live) setState({ configured: false, implicit: false, versions: [], message: '' }); }
     })();
     return () => { live = false; };
-  }, [client, open]);
+  }, [client, open, dc]);
   return state;
 }
 

@@ -13,6 +13,9 @@ export interface HttpOptions {
   onAuthRequired?: () => void;
 }
 
+/** The admin API of this hub, or of one of its datacenters (the hub carries the call there). */
+const root = (dc?: string): string => (dc ? `/api/dc/${encodeURIComponent(dc)}` : '/api');
+
 /** The header is the CSRF guard: a page from another origin cannot send it without a CORS preflight. */
 const CSRF = { 'X-Requested-With': 'hermes' };
 
@@ -63,16 +66,25 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
     },
     sources: {
       list: () => get('/api/sources'),
-      add: (request) => call('POST', '/api/sources', request),
-      rename: (id, name) => send('PATCH', `/api/sources/${encodeURIComponent(id)}`, { name }),
-      remove: (id) => send('DELETE', `/api/sources/${encodeURIComponent(id)}`),
-      upgrade: (id, version) => send('POST', `/api/sources/${encodeURIComponent(id)}/upgrade`, { version }),
+      add: (request, dc) => call('POST', `${root(dc)}/sources`, request),
+      rename: (id, name, dc) => send('PATCH', `${root(dc)}/sources/${encodeURIComponent(id)}`, { name }),
+      remove: (id, dc) => send('DELETE', `${root(dc)}/sources/${encodeURIComponent(id)}`),
+      upgrade: (id, version, dc) => send('POST', `${root(dc)}/sources/${encodeURIComponent(id)}/upgrade`, { version }),
     },
     registry: {
-      get: () => get('/api/registry'),
-      save: (input) => call('PUT', '/api/registry', input),
-      test: (input) => call('POST', '/api/registry/test', input),
-      versions: () => get('/api/registry/versions'),
+      get: (dc) => get(`${root(dc)}/registry`),
+      save: (input, dc) => call('PUT', `${root(dc)}/registry`, input),
+      test: (input, dc) => call('POST', `${root(dc)}/registry/test`, input),
+      versions: (dc) => get(`${root(dc)}/registry/versions`),
+    },
+    federation: {
+      view: () => get('/api/federation'),
+      enableMember: (agentAddress) => call('POST', '/api/federation/member', { agentAddress }),
+      newCode: () => call('POST', '/api/federation/member/code', {}),
+      disableMember: () => send('DELETE', '/api/federation/member'),
+      addDatacenter: (input) => call('POST', '/api/federation/datacenters', input),
+      updateDatacenter: (id, patch) => call('PATCH', `/api/federation/datacenters/${encodeURIComponent(id)}`, patch),
+      removeDatacenter: (id) => call('DELETE', `/api/federation/datacenters/${encodeURIComponent(id)}`, {}),
     },
     commLog: {
       list: (query = {}) => {

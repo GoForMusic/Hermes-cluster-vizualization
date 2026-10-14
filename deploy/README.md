@@ -59,6 +59,12 @@ helm install hermes ./deploy/helm/hermes -n hermes --create-namespace \
 - The pod runs as 65532, read-only root filesystem, all capabilities dropped, no service-account token.
 - **Upgrade:** `helm upgrade hermes ./deploy/helm/hermes -n hermes --set image.tag=1.0.2`.
 
+## A hub in a network zone the main hub's agents cannot reach
+
+When a firewall lets the main hub reach a zone but not the other way round, install a second hub there with the same compose or Helm files, choose
+*Managed by another hub* on its first start, and add it in the main hub (Settings → Federation). It then has no login and is managed from the main
+hub. See [docs/federation.md](../docs/federation.md). To undo it by hand, restart that hub once with `HUB_FEDERATION=off`.
+
 ## Agents
 
 After the first login the web app asks where the agent images come from (default: the public images on `ghcr.io/goformusic`). Add a

@@ -14,8 +14,9 @@ use tracing::warn;
 use crate::controller;
 use crate::database::{Repositories, now_ms};
 use crate::services::{
-    AuthImp, CommLogImp, EngineImp, GuardImp, IAuth, IEngine, IGuard, IIngestService, IStore,
-    IngestServiceImp, SharedCommLog, SharedUpgrades, StoreImp, UpgradeServiceImp,
+    AuthImp, CommLogImp, EngineImp, FederationImp, GuardImp, IAuth, IEngine, IGuard,
+    IIngestService, IStore, IngestServiceImp, MasterLinks, SharedCommLog, SharedFederation,
+    SharedUpgrades, StoreImp, UpgradeServiceImp,
 };
 
 pub struct Settings {
@@ -30,6 +31,8 @@ pub struct Settings {
     /// Whether this process terminates TLS itself (`HUB_TLS_CERT`/`HUB_TLS_KEY` both set). Only used to decide the session
     /// cookie's `Secure` attribute — the listener itself is chosen in `main`, before any of this exists.
     pub tls_enabled: bool,
+    /// Optional: PEM of an extra certificate authority to trust when a member hub is reached over `https://` (`HUB_FEDERATION_CA_FILE`).
+    pub federation_ca: Option<Vec<u8>>,
 }
 
 pub struct AppState {
@@ -43,6 +46,10 @@ pub struct AppState {
     pub upgrades: SharedUpgrades,
     /// What agents and the hub said to each other; off until an admin turns it on.
     pub comm_log: SharedCommLog,
+    /// Whether this hub is managed by another one (a member) or controls datacenters (a master), and the pairing between the two.
+    pub federation: SharedFederation,
+    /// The links this hub, as a master, holds to its datacenters.
+    pub links: Arc<MasterLinks>,
     pub settings: Settings,
     pub registry: crate::registry::RegistryClient,
     /// The version of the agent image the install manifests point at, when its tag is a version: an agent older than this can be updated.
@@ -100,14 +107,23 @@ impl Hub {
     pub fn new(db: Repositories, settings: Settings) -> Self {
         let store: Arc<dyn IStore> = Arc::new(StoreImp::new());
         let guard: Arc<dyn IGuard> = Arc::new(GuardImp::new(store.clone(), db.sources.clone())); // one cluster, one source
+        let federation: SharedFederation = Arc::new(FederationImp::new(db.federation.clone()));
+        let links = Arc::new(MasterLinks::new(
+            store.clone(),
+            federation.clone(),
+            settings.federation_ca.clone(),
+            crate::version::VERSION,
+        ));
+        let engine = EngineImp::new(
+            store.clone(),
+            db.alerts.clone(),
+            db.sources.clone(),
+            db.beats.clone(),
+            db.settings.clone(),
+        );
+        engine.set_remote_sources(links.clone());
         let state = AppState {
-            rules: Arc::new(EngineImp::new(
-                store.clone(),
-                db.alerts.clone(),
-                db.sources.clone(),
-                db.beats.clone(),
-                db.settings.clone(),
-            )),
+            rules: Arc::new(engine),
             ingest: Arc::new(IngestServiceImp::new(
                 guard.clone(),
                 store.clone(),
@@ -123,6 +139,8 @@ impl Hub {
             guard,
             upgrades: Arc::new(UpgradeServiceImp::new()),
             comm_log: Arc::new(CommLogImp::new()),
+            federation,
+            links,
             expected_agent: crate::version::image_version(&settings.agent_image),
             latest_in_registry: std::sync::Mutex::new(None),
             settings,
@@ -138,10 +156,12 @@ impl Hub {
         let files = ServeDir::new(&self.state.settings.web);
         controller::routes(self.state.clone())
             .merge(controller::agent_routes(
+                self.state.clone(),
                 self.state.ingest.clone(),
                 self.state.upgrades.clone(),
                 self.state.comm_log.clone(),
             ))
+            .merge(controller::federation_routes(self.state.clone()))
             .fallback_service(files)
             // a handler that sets its own Cache-Control (the event stream) keeps it; everything else must never be cached
             .layer(SetResponseHeaderLayer::if_not_present(
@@ -174,6 +194,7 @@ impl Hub {
 
     /// The rules engine, the watch for silent agents and the purge of expired sessions, until the process ends.
     pub fn spawn_background(&self) {
+        self.state.links.start_all();
         let rules = self.state.rules.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(1));

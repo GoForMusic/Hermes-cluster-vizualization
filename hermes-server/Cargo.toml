@@ -37,7 +37,8 @@ sha2 = "0.11.0"
 subtle = "2.6.1"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "signal", "sync", "fs"] }
 tokio-stream = "0.1.19"
-tonic = "0.14.6"
+tonic = { version = "0.14.6", features = ["tls-ring", "tls-webpki-roots"] }
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
 tower-http = { version = "0.7.1", features = ["fs", "set-header"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

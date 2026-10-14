@@ -7,6 +7,8 @@ import { useClient, useStore, useWholeState } from '../../../state/context';
 import { CommitInput, TagList } from '../../../ui/inputs';
 import { Toggle } from '../../../ui/toggle';
 import { useSession } from '../../../app/session';
+import { FederationSettings } from '../../federation/FederationSettings';
+import { useFederation } from '../../federation/useFederation';
 import { RegistryForm } from '../../registry/RegistryForm';
 import { PageHead } from '../PageHead';
 
@@ -22,12 +24,16 @@ export function Settings() {
         <section><TvSettings /></section>
         <section><RegistrySettings /></section>
       </div>
+      <FederationSettings />
     </>
   );
 }
 
 function RegistrySettings() {
   const [saved, setSaved] = useState(false);
+  const [dc, setDc] = useState(''); // '' is this hub
+  const { view } = useFederation();
+  const datacenters = view.datacenters.filter((d) => d.state === 'connected');
   return (
     <>
       <h2 className="section-h">Registry</h2>
@@ -35,7 +41,16 @@ function RegistrySettings() {
         <p className="help" style={{ marginTop: 0 }}>
           The container registry the agent images are pulled from. Add source uses it for the image, the version list and the login the cluster needs. Sources already added keep the image they were installed with.
         </p>
-        <RegistryForm submitLabel="Save" onSaved={() => setSaved(true)} />
+        {datacenters.length ? (
+          <label className="f" style={{ marginBottom: 12 }}>For the agents of
+            <select value={dc} onChange={(e) => { setDc(e.target.value); setSaved(false); }}>
+              <option value="">{view.name || 'this hub'} (this hub)</option>
+              {datacenters.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+            <span className="muted" style={{ fontSize: 11.5 }}>Each datacenter has its own registry login. Its password is kept encrypted on that hub, and “Test connection” runs from there.</span>
+          </label>
+        ) : null}
+        <RegistryForm key={dc} dc={dc || undefined} submitLabel="Save" onSaved={() => setSaved(true)} />
         {saved ? <p className="help" role="status" style={{ marginBottom: 0 }}>Saved.</p> : null}
       </div>
     </>

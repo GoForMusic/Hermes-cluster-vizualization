@@ -1,6 +1,11 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=../../proto");
-    tonic_prost_build::configure()
-        .compile_protos(&["../../proto/infraviz/v1/agent.proto"], &["../../proto"])?;
+    tonic_prost_build::configure().compile_protos(
+        &[
+            "../../proto/infraviz/v1/agent.proto",
+            "../../proto/infraviz/v1/federation.proto",
+        ],
+        &["../../proto"],
+    )?;
     Ok(())
 }

@@ -2,6 +2,8 @@
 import { useMemo, useState } from 'react';
 import { AdminShell } from '../features/admin/AdminShell';
 import { AuthScreen } from '../features/auth/AuthScreen';
+import { ManagedScreen, PairingScreen } from '../features/federation/MemberScreens';
+import type { MemberCode } from '../hub/HubClient';
 import { SetupRegistry } from '../features/registry/SetupRegistry';
 import { Landing } from '../features/landing/Landing';
 import { TvScreen } from '../features/tv/TvScreen';
@@ -16,6 +18,7 @@ export function App() {
   const route = useHashRoute();
   const { phase, reboot, refreshAuth } = useBoot(route.view === 'admin');
   const [registryStep, setRegistryStep] = useState(false); // the account is made: the second step of the setup follows
+  const [pairingCode, setPairingCode] = useState<MemberCode | null>(null); // the code just made, which is only ever shown once
 
   const session = useMemo<Session | null>(() => {
     if (phase.kind !== 'ready') return null;
@@ -24,7 +27,9 @@ export function App() {
 
   return (
     <>
-      {phase.kind === 'setup' && !registryStep ? <AuthScreen mode="setup" onDone={() => setRegistryStep(true)} /> : null}
+      {phase.kind === 'setup' && !registryStep ? <AuthScreen mode="setup" onDone={() => setRegistryStep(true)} onMember={(c) => { setPairingCode(c); reboot(); }} /> : null}
+      {phase.kind === 'pairing' ? <PairingScreen member={phase.member} first={pairingCode} onPaired={reboot} onCancel={() => { setPairingCode(null); reboot(); }} /> : null}
+      {phase.kind === 'managed' ? <ManagedScreen member={phase.member} /> : null}
       {phase.kind === 'setup' && registryStep ? <SetupRegistry onDone={() => { setRegistryStep(false); reboot(); }} /> : null}
       {phase.kind === 'login' ? <AuthScreen mode="login" onDone={reboot} /> : null}
       {phase.kind === 'fatal' ? (

@@ -3,7 +3,7 @@
 //! and resolving alerts, recording heartbeats. The actual evaluation is `judge()`'s job, not this file's.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -13,7 +13,7 @@ use super::judge::{Beat, Want, judge};
 use super::rule::{Rule, defaults};
 use crate::database::{IAlertDAO, IBeatDAO, ISettingsDAO, ISourceDAO, now_ms};
 use crate::model::Alert;
-use crate::services::IStore;
+use crate::services::{IRemoteSources, IStore};
 
 /// How long a condition must stay away before its alert resolves. Without it a crash-looping service, which alternates between running
 /// and failing, would open and close an alert every few seconds.
@@ -45,6 +45,8 @@ pub struct EngineImp {
     sources: Arc<dyn ISourceDAO>,
     beats: Arc<dyn IBeatDAO>,
     settings: Arc<dyn ISettingsDAO>,
+    /// The sources of the datacenters this hub controls, next to its own.
+    remote: OnceLock<Arc<dyn IRemoteSources>>,
     state: Mutex<State>,
 }
 
@@ -69,12 +71,18 @@ impl EngineImp {
             sources,
             beats,
             settings,
+            remote: OnceLock::new(),
             state: Mutex::new(state),
         };
         if let Some(raw) = engine.settings.get_setting("settings") {
             engine.set_settings(raw.as_bytes());
         }
         engine
+    }
+
+    /// The sources of the datacenters this hub controls: they can be unreachable like its own.
+    pub fn set_remote_sources(&self, remote: Arc<dyn IRemoteSources>) {
+        let _ = self.remote.set(remote);
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -169,7 +177,10 @@ impl IEngine for EngineImp {
 
     fn evaluate(&self, now: i64) {
         let nodes = self.store.nodes();
-        let sources = self.sources.list_sources().unwrap_or_default();
+        let mut sources = self.sources.list_sources().unwrap_or_default();
+        if let Some(remote) = self.remote.get() {
+            sources.extend(remote.sources());
+        }
         let mut st = self.lock();
         let rules = st.rules.clone();
         let (desired, beats) = judge(&nodes, &sources, &rules);

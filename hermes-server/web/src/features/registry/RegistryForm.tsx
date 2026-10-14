@@ -21,7 +21,8 @@ const PRESETS: readonly { name: string; url: string; project?: string; hint: str
   { name: 'Harbor', url: '', hint: 'Address = your Harbor host. Use a robot account with pull rights only.' },
 ];
 
-export function RegistryForm({ submitLabel, onSaved, extra }: { submitLabel: string; onSaved: (saved: RegistryView) => void; extra?: ReactNode }) {
+/** `dc`: the registry of that datacenter (its own login, seen from its own network) instead of this hub's. */
+export function RegistryForm({ submitLabel, onSaved, extra, dc }: { submitLabel: string; onSaved: (saved: RegistryView) => void; extra?: ReactNode; dc?: string }) {
   const client = useClient();
   const [form, setForm] = useState<RegistryInput | null>(null);
   const [hasSecret, setHasSecret] = useState(false);
@@ -31,17 +32,17 @@ export function RegistryForm({ submitLabel, onSaved, extra }: { submitLabel: str
 
   useEffect(() => {
     let live = true;
-    void client.registry.get().then((v) => {
+    void client.registry.get(dc).then((v) => {
       if (!live) return;
       const fresh = !v.url.trim(); // nothing saved yet: start from the official images instead of an empty form
       setForm({ ...(fresh ? DEFAULT_REGISTRY : { url: v.url, project: v.project, auth: v.auth }), username: v.username, linuxImage: v.linuxImage, windowsImage: v.windowsImage });
       setHasSecret(v.hasSecret);
     }).catch(() => {});
     return () => { live = false; };
-  }, [client]);
+  }, [client, dc]);
 
   const { busy, error, submit } = useAsyncSubmit(
-    async () => { onSaved(await client.registry.save(form!)); },
+    async () => { onSaved(await client.registry.save(form!, dc)); },
     () => (form && !form.url.trim() ? 'Type the registry address, or skip this step.' : null),
   );
   if (!form) return null;
@@ -50,7 +51,7 @@ export function RegistryForm({ submitLabel, onSaved, extra }: { submitLabel: str
 
   const test = async () => {
     setTesting(true);
-    try { setResult(await client.registry.test(form)); } catch (e) { setResult({ ok: false, message: errorText(e), versions: [] }); } finally { setTesting(false); }
+    try { setResult(await client.registry.test(form, dc)); } catch (e) { setResult({ ok: false, message: errorText(e), versions: [] }); } finally { setTesting(false); }
   };
 
   return (

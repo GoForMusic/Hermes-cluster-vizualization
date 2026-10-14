@@ -117,3 +117,110 @@ fn a_new_hello_is_read_by_an_old_hub() {
     };
     assert_eq!((h.agent.as_str(), h.version.as_str()), ("a", "1.0.5"));
 }
+
+// ---- the master <-> member contract -----------------------------------------------------------------------------
+
+mod federation {
+    use hermes_proto::v1::{MasterMessage, MemberMessage, master_message, member_message};
+    use prost::Message;
+
+    /// The first version of the link, written field by field: the numbers are the contract, and a hub of another version reads them.
+    #[derive(Clone, PartialEq, Message)]
+    struct OldMasterHello {
+        #[prost(uint32, tag = "1")]
+        protocol: u32,
+        #[prost(string, tag = "2")]
+        datacenter: String,
+        #[prost(string, tag = "3")]
+        version: String,
+    }
+
+    #[derive(Clone, PartialEq, Message)]
+    struct OldMasterMessage {
+        #[prost(oneof = "old_master::Message", tags = "1")]
+        message: Option<old_master::Message>,
+    }
+
+    mod old_master {
+        use prost::Oneof;
+
+        #[derive(Clone, PartialEq, Oneof)]
+        pub enum Message {
+            #[prost(message, tag = "1")]
+            Hello(super::OldMasterHello),
+        }
+    }
+
+    #[derive(Clone, PartialEq, Message)]
+    struct OldMemberHello {
+        #[prost(uint32, tag = "1")]
+        protocol: u32,
+        #[prost(string, tag = "2")]
+        version: String,
+        #[prost(string, tag = "3")]
+        agent_address: String,
+    }
+
+    #[derive(Clone, PartialEq, Message)]
+    struct OldMemberMessage {
+        #[prost(oneof = "old_member::Message", tags = "1")]
+        message: Option<old_member::Message>,
+    }
+
+    mod old_member {
+        use prost::Oneof;
+
+        #[derive(Clone, PartialEq, Oneof)]
+        pub enum Message {
+            #[prost(message, tag = "1")]
+            Hello(super::OldMemberHello),
+        }
+    }
+
+    #[test]
+    fn the_hellos_of_the_first_version_of_the_link_are_still_read() {
+        let old = OldMasterMessage {
+            message: Some(old_master::Message::Hello(OldMasterHello {
+                protocol: 1,
+                datacenter: "dc2".into(),
+                version: "1.0.0".into(),
+            })),
+        };
+        let new = MasterMessage::decode(old.encode_to_vec().as_slice()).unwrap();
+        let Some(master_message::Message::Hello(h)) = new.message else {
+            panic!("not a hello")
+        };
+        assert_eq!(
+            (h.protocol, h.datacenter.as_str(), h.version.as_str()),
+            (1, "dc2", "1.0.0")
+        );
+
+        let old = OldMemberMessage {
+            message: Some(old_member::Message::Hello(OldMemberHello {
+                protocol: 1,
+                version: "1.0.0".into(),
+                agent_address: "http://hub:8765".into(),
+            })),
+        };
+        let new = MemberMessage::decode(old.encode_to_vec().as_slice()).unwrap();
+        let Some(member_message::Message::Hello(h)) = new.message else {
+            panic!("not a hello")
+        };
+        assert_eq!(h.agent_address, "http://hub:8765");
+        assert!(
+            h.features.is_empty(),
+            "a member that knows no features says none"
+        );
+    }
+
+    #[test]
+    fn a_message_of_a_kind_this_version_does_not_know_is_ignored_not_an_error() {
+        // field 99 of a MemberMessage: a case a later version added
+        let mut bytes = Vec::new();
+        prost::encoding::encode_key(99, prost::encoding::WireType::LengthDelimited, &mut bytes);
+        prost::encoding::encode_varint(2, &mut bytes);
+        bytes.extend_from_slice(b"xx");
+        let m = MemberMessage::decode(bytes.as_slice()).unwrap();
+        assert!(m.message.is_none());
+    }
+}
