@@ -2,6 +2,7 @@
 //! is shown once, when the source is created.
 
 use anyhow::{Context, Result};
+use minijinja::syntax::SyntaxConfig;
 use minijinja::{AutoEscape, Environment, context};
 
 use crate::model::{TYPE_DOCKER_AGENT, TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT};
@@ -104,7 +105,7 @@ pub fn render(source_type: &str, p: &AgentParams<'_>) -> Result<(String, &'stati
     let (template, hint) = (t.template, t.hint);
     let mut env = Environment::new();
     env.set_auto_escape_callback(|_| AutoEscape::None);
-    env.set_keep_trailing_newline(true);
+    env.set_syntax(SyntaxConfig::builder().keep_trailing_newline(true).build()?);
     env.add_template("agent", template)?;
     let out = env
         .get_template("agent")?
