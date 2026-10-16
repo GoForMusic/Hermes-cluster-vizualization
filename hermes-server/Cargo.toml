@@ -23,7 +23,7 @@ base64 = "0.23.1"
 futures-util = "0.3.34"
 hex = "0.4.3"
 hermes-proto = { path = "../pkg/proto" }
-minijinja = "2.24.0"
+minijinja = "3.0.0"
 prost = "0.14.4"
 prost-types = "0.14.4"
 rand = "0.10.3"
