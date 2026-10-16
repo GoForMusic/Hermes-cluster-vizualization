@@ -105,7 +105,11 @@ pub fn render(source_type: &str, p: &AgentParams<'_>) -> Result<(String, &'stati
     let (template, hint) = (t.template, t.hint);
     let mut env = Environment::new();
     env.set_auto_escape_callback(|_| AutoEscape::None);
-    env.set_syntax(SyntaxConfig::builder().keep_trailing_newline(true).build()?);
+    env.set_syntax(
+        SyntaxConfig::builder()
+            .keep_trailing_newline(true)
+            .build()?,
+    );
     env.add_template("agent", template)?;
     let out = env
         .get_template("agent")?
