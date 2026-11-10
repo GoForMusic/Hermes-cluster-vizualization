@@ -8,7 +8,7 @@ const hub = process.env.HUB_URL ?? 'http://localhost:8080';
 export default defineConfig({
   plugins: [react()],
   server: { proxy: { '/api': { target: hub, changeOrigin: false } } },
-  build: { outDir: 'dist', sourcemap: true },
+  build: { outDir: 'dist', sourcemap: false },
   test: {
     environment: 'jsdom',
     globals: true,
