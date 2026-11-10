@@ -1,32 +1,35 @@
 version: 2
+
+# One PR a month for everything, instead of one per ecosystem. Dependabot cannot stack PRs, so this is the closest thing.
+multi-ecosystem-groups:
+  monthly:
+    schedule:
+      interval: monthly
+    labels: ["⬆️ dependencies"]
+
 updates:
   # The Cargo workspace (hub, both agents, pkg/proto, pkg/agentkit, pkg/swarm) — one manifest at the root covers every member.
+  # Major bumps are left out of the group: they usually need code changes (minijinja 3) and are done by hand.
   - package-ecosystem: cargo
     directory: /
-    schedule:
-      interval: weekly
-    groups:
-      minor-and-patch:
-        update-types: [minor, patch]
-    labels: ["⬆️ dependencies", "🦀 rust"]
+    multi-ecosystem-group: monthly
+    patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
-  # HERMES, the web app.
+  # HERMES, the web app. Majors by hand, like the Cargo side.
   - package-ecosystem: npm
     directory: /hermes-server/web
-    schedule:
-      interval: weekly
-    groups:
-      minor-and-patch:
-        update-types: [minor, patch]
-    labels: ["⬆️ dependencies", "🔷 typescript"]
+    multi-ecosystem-group: monthly
+    patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # The workflows themselves (actions/checkout, docker/*, ...) — would have caught the Node 20 deprecation on its own.
-  # Reuses our own ⚙️ ci label rather than a separate "github_actions" one Dependabot would otherwise create.
+  # Majors stay in: for actions they are just a version bump.
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-    groups:
-      minor-and-patch:
-        update-types: [minor, patch]
-    labels: ["⬆️ dependencies", "⚙️ ci"]
+    multi-ecosystem-group: monthly
+    patterns: ["*"]
