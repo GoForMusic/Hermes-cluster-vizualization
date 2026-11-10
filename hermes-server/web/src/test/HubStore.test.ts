@@ -58,6 +58,15 @@ describe('the store', () => {
     expect(hub.calls).toContain('sources.list');
   });
 
+  it('does not ask a viewer for the sources when the hub says they changed (it would be a 401 to the login page)', async () => {
+    const { hub, store } = await loaded(false);
+    store.startLive();
+    hub.calls.length = 0;
+    push(hub, { type: 'sources' });
+    await Promise.resolve();
+    expect(hub.calls).not.toContain('sources.list');
+  });
+
   it('says the link is lost and catches up when it comes back', async () => {
     const { hub, store } = await loaded();
     store.startLive();
