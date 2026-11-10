@@ -12,6 +12,7 @@ import type { IHubClient } from '../hub/HubClient';
 type Listener = () => void;
 
 export class HubStore {
+  private admin = false;
   private state: HubState = initialState();
   private readonly listeners = new Set<Listener>();
   private readonly alertListeners = new Set<(alert: Alert) => void>();
@@ -46,6 +47,7 @@ export class HubStore {
 
   /** Loads what the person may see. Source details are for admins only. */
   async load(admin: boolean): Promise<void> {
+    this.admin = admin;
     const { topology, settings, alerts, sources } = this.client;
     const [snapshot, info, saved, list] = await Promise.all([topology.snapshot(), topology.info(), settings.load(), alerts.list()]);
     const sourceList = admin ? await sources.list() : [];
@@ -110,6 +112,7 @@ export class HubStore {
   }
 
   async refreshSources(): Promise<void> {
+    if (!this.admin) return; // the list is for admins: asking as a viewer is a 401 that would send the wallboard to the login page
     try { this.set({ ...this.state, sources: await this.client.sources.list() }); } catch { /* the hub is unreachable: keep the old list */ }
   }
 
