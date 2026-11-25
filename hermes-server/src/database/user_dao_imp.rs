@@ -16,6 +16,9 @@ pub struct NewUser<'a> {
     pub email: &'a str,
     pub break_glass: bool,
     pub created: i64,
+    /// The identity provider's id and the account's id there; empty for a local account.
+    pub idp: &'a str,
+    pub external_id: &'a str,
 }
 
 /// What may change about an account afterwards; `None` leaves it as it is.
@@ -31,6 +34,12 @@ pub trait IUserDAO: Send + Sync {
     fn create_user(&self, new: &NewUser) -> Result<User>;
     fn user_by_name(&self, name: &str) -> Result<Option<User>>;
     fn user_by_id(&self, id: i64) -> Result<Option<User>>;
+    /// The account an identity provider knows as `external_id`.
+    fn user_by_external(&self, idp: &str, external_id: &str) -> Result<Option<User>>;
+    /// The local accounts (no provider) with this email, compared without regard to case.
+    fn local_users_by_email(&self, email: &str) -> Result<Vec<User>>;
+    /// Makes a local account the one an identity provider vouches for: its password goes.
+    fn link_user(&self, id: i64, idp: &str, external_id: &str) -> Result<()>;
     fn list_users(&self) -> Result<Vec<User>>;
     fn update_user(&self, id: i64, patch: &UserPatch) -> Result<()>;
     fn set_password(&self, id: i64, hash: &str) -> Result<()>;
@@ -42,7 +51,8 @@ pub struct UserDAOImp {
     ctx: Arc<dyn IDbContext>,
 }
 
-const COLUMNS: &str = "id,username,password_hash,role,created,email,disabled,break_glass";
+const COLUMNS: &str =
+    "id,username,password_hash,role,created,email,disabled,break_glass,idp,external_id";
 
 fn read(r: &Row) -> rusqlite::Result<User> {
     Ok(User {
@@ -54,6 +64,8 @@ fn read(r: &Row) -> rusqlite::Result<User> {
         email: r.get(5)?,
         disabled: r.get(6)?,
         break_glass: r.get(7)?,
+        idp: r.get(8)?,
+        external_id: r.get(9)?,
     })
 }
 
@@ -86,14 +98,16 @@ impl IUserDAO for UserDAOImp {
     fn create_user(&self, new: &NewUser) -> Result<User> {
         let conn = self.ctx.conn();
         conn.execute(
-            "INSERT INTO users(username,password_hash,role,created,email,break_glass) VALUES(?1,?2,?3,?4,?5,?6)",
+            "INSERT INTO users(username,password_hash,role,created,email,break_glass,idp,external_id) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
             params![
                 new.username,
                 new.password_hash,
                 new.role,
                 new.created,
                 new.email,
-                new.break_glass
+                new.break_glass,
+                new.idp,
+                new.external_id
             ],
         )?;
         Ok(User {
@@ -105,6 +119,8 @@ impl IUserDAO for UserDAOImp {
             email: new.email.into(),
             disabled: false,
             break_glass: new.break_glass,
+            idp: new.idp.into(),
+            external_id: new.external_id.into(),
         })
     }
 
@@ -114,6 +130,34 @@ impl IUserDAO for UserDAOImp {
 
     fn user_by_id(&self, id: i64) -> Result<Option<User>> {
         self.user("id=?1", id)
+    }
+
+    fn user_by_external(&self, idp: &str, external_id: &str) -> Result<Option<User>> {
+        Ok(self
+            .ctx
+            .conn()
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM users WHERE idp=?1 AND external_id=?2 AND idp<>''"),
+                params![idp, external_id],
+                read,
+            )
+            .optional()?)
+    }
+
+    fn local_users_by_email(&self, email: &str) -> Result<Vec<User>> {
+        let conn = self.ctx.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM users WHERE idp='' AND email<>'' AND lower(email)=lower(?1) ORDER BY id"
+        ))?;
+        Ok(stmt.query_map([email], read)?.collect::<Result<_, _>>()?)
+    }
+
+    fn link_user(&self, id: i64, idp: &str, external_id: &str) -> Result<()> {
+        self.ctx.conn().execute(
+            "UPDATE users SET idp=?1,external_id=?2,password_hash='' WHERE id=?3",
+            params![idp, external_id, id],
+        )?;
+        Ok(())
     }
 
     fn list_users(&self) -> Result<Vec<User>> {

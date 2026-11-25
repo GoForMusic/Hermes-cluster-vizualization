@@ -18,7 +18,7 @@ use crate::database::{Repositories, now_ms};
 use crate::services::{
     AccessImp, AuthImp, AuthzImp, CommLogImp, EngineImp, FederationImp, GuardImp, IAccess, IAuth,
     IAuthz, IEngine, IGuard, IIngestService, IStore, IngestServiceImp, MasterLinks, SharedCommLog,
-    SharedFederation, SharedUpgrades, StoreImp, UpgradeServiceImp,
+    SharedFederation, SharedUpgrades, SsoImp, StoreImp, UpgradeServiceImp,
 };
 
 pub struct Settings {
@@ -27,6 +27,9 @@ pub struct Settings {
     /// Where the hub is mounted when a reverse proxy sends it only one sub-path and does not strip it (`HUB_BASE_PATH`, e.g. `/hermes`).
     /// Empty = the root; otherwise it starts with `/` and does not end with one (see `normalize_base_path`).
     pub base_path: String,
+    /// The address people reach this hub at, when it cannot be told from the request (`HUB_PUBLIC_URL`, e.g. `https://hub.example.com`): what the
+    /// single sign-on callback address is built from. No path and no trailing slash: the base path is added.
+    pub public_url: Option<String>,
     /// The Linux agent image the generated install manifests point at.
     pub agent_image: String,
     /// Optional: the Windows agent image (Swarm only).
@@ -48,6 +51,8 @@ pub struct AppState {
     pub access: Arc<dyn IAccess>,
     /// Who may do what: the policies of the groups a user is in.
     pub authz: Arc<dyn IAuthz>,
+    /// Signing in through an identity provider (OpenID Connect).
+    pub sso: Arc<SsoImp>,
     pub rules: Arc<dyn IEngine>,
     pub ingest: Arc<dyn IIngestService>,
     pub guard: Arc<dyn IGuard>,
@@ -144,6 +149,7 @@ impl Hub {
             auth: Arc::new(AuthImp::new(
                 db.users.clone(),
                 db.groups.clone(),
+                db.idps.clone(),
                 db.sessions.clone(),
                 db.settings.clone(),
             )),
@@ -152,6 +158,12 @@ impl Hub {
                 db.groups.clone(),
                 db.policies.clone(),
                 db.sessions.clone(),
+                authz.clone(),
+            )),
+            sso: Arc::new(SsoImp::new(
+                db.idps.clone(),
+                db.users.clone(),
+                db.groups.clone(),
                 authz.clone(),
             )),
             authz,

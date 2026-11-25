@@ -116,6 +116,13 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       deletePolicy: (id) => send('DELETE', `/api/policies/${id}`),
       check: (user, capability, path) => get(`/api/policies/check?user=${user}&capability=${encodeURIComponent(capability)}&path=${encodeURIComponent(path)}`),
     },
+    sso: {
+      providers: () => get('/api/identity-providers'),
+      create: (input) => call('POST', '/api/identity-providers', input),
+      update: (id, input) => call('PUT', `/api/identity-providers/${encodeURIComponent(id)}`, input),
+      remove: (id) => send('DELETE', `/api/identity-providers/${encodeURIComponent(id)}`),
+      test: (issuer) => call('POST', '/api/identity-providers/test', { issuer }),
+    },
     uptime: {
       load: (span, buckets) => get(`/api/uptime?span=${span}&buckets=${buckets}`),
     },

@@ -9,6 +9,8 @@ import type { CommLogView } from '../generated/CommLogView';
 import type { FederationView } from '../generated/FederationView';
 import type { AccessCheck } from '../generated/AccessCheck';
 import type { PolicyView } from '../generated/PolicyView';
+import type { ProviderTest } from '../generated/ProviderTest';
+import type { ProviderView } from '../generated/ProviderView';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
 import type { GroupView } from '../generated/GroupView';
@@ -46,6 +48,9 @@ export interface FakeHub {
   sessionPolicy: SessionPolicy;
   groups: GroupView[];
   policies: PolicyView[];
+  /** the identity providers the fake hub holds, and what "Test connection" answers */
+  providers: ProviderView[];
+  providerTest: ProviderTest;
   /** what "Test access" answers */
   check: AccessCheck;
   /** when set, the next change to an account or a group is refused with this */
@@ -68,10 +73,12 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     renameError: '',
     registryTest: { ok: true, message: 'connected', versions: ['1.0.1', '1.0.0'] },
     federation: { name: 'dc1', member: null, datacenters: [] },
-    users: [{ id: 1, username: 'admin', email: '', role: 'admin', disabled: false, breakGlass: true, created: 1, groups: [] }],
+    users: [{ id: 1, username: 'admin', email: '', role: 'admin', disabled: false, breakGlass: true, sso: '', created: 1, groups: [] }],
     sessionPolicy: { maxHours: 336, idleMinutes: 0 },
     groups: [],
     policies: [],
+    providers: [],
+    providerTest: { ok: true, message: 'found https://idp.example.com (login at https://idp.example.com/authorize)' },
     check: { allowed: true, reason: 'allowed by read-only' },
     accessError: '',
     data: { nodes: [wireNode('c', 'cluster', null), wireNode('h', 'host', 'c'), wireNode('w', 'workload', 'h', { meta: { ns: 'default' } })], edges: [] },
@@ -144,7 +151,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
       createUser: async (i) => {
         note(`access.createUser:${i.username}:${i.email}:${i.breakGlass}`);
         refuse();
-        const u: UserView = { id: hub.users.length + 10, username: i.username, email: i.email, role: 'admin', disabled: false, breakGlass: i.breakGlass, created: 2, groups: [] };
+        const u: UserView = { id: hub.users.length + 10, username: i.username, email: i.email, role: 'admin', disabled: false, breakGlass: i.breakGlass, sso: '', created: 2, groups: [] };
         hub.users = [...hub.users, u];
         return u;
       },
@@ -200,6 +207,24 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
         hub.users = hub.users.map((u) => ({ ...u, groups: users.includes(u.id) ? [...new Set([...u.groups, id])] : u.groups.filter((x) => x !== id) }));
         return hub.groups.find((g) => g.id === id)!;
       },
+    },
+    sso: {
+      providers: async () => hub.providers,
+      create: async (input) => {
+        note(`sso.create:${input.name}:${input.issuer}:${input.secret ? 'secret' : 'nosecret'}:${input.groupMap.length}`);
+        refuse();
+        const p: ProviderView = { id: input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: input.name, issuer: input.issuer, clientId: input.clientId, hasSecret: !!input.secret, scopes: input.scopes || 'openid profile email', groupsClaim: input.groupsClaim || 'groups', allowedDomains: input.allowedDomains, enabled: input.enabled, autoCreate: input.autoCreate, linkExisting: input.linkExisting, trustEmail: input.trustEmail, enforce: input.enforce, defaultGroup: input.defaultGroup, groupMap: input.groupMap, redirectUri: 'https://hub.example.com/api/auth/sso/x/callback' };
+        hub.providers = [...hub.providers, p];
+        return p;
+      },
+      update: async (id, input) => {
+        note(`sso.update:${id}:${input.name}:${input.secret ? 'secret' : 'nosecret'}:${input.enforce}`);
+        refuse();
+        hub.providers = hub.providers.map((p) => (p.id === id ? { ...p, ...input, hasSecret: !!input.secret || p.hasSecret } as ProviderView : p));
+        return hub.providers.find((p) => p.id === id)!;
+      },
+      remove: async (id) => { note(`sso.remove:${id}`); refuse(); hub.providers = hub.providers.filter((p) => p.id !== id); },
+      test: async (issuer) => { note(`sso.test:${issuer}`); return hub.providerTest; },
     },
     uptime: { load: async (span) => { note(`uptime:${span}`); return hub.uptime; } },
     feed: { connect: (handlers) => { hub.feed.handlers = handlers; hub.feed.closed = false; return () => { hub.feed.closed = true; }; } },

@@ -20,7 +20,7 @@ use crate::services::AuthError;
 
 /// `tls_enabled` is the hub's own TLS (`HUB_TLS_CERT`/`HUB_TLS_KEY`); the header covers the other case, a proxy in front that
 /// terminates TLS itself and forwards plain HTTP.
-fn session_cookie(
+pub(super) fn session_cookie(
     headers: &HeaderMap,
     settings: &Settings,
     max_age_secs: i64,
@@ -107,6 +107,10 @@ pub(super) async fn auth_status(State(st): State<Shared>, headers: HeaderMap) ->
         authenticated: user.is_some(),
         public_view: st.auth.public_view() && !st.federation.is_locked(),
         grants: user.as_ref().map(|u| st.authz.grants(u)),
+        sso: user
+            .is_none()
+            .then(|| st.sso.offered())
+            .filter(|p| !p.is_empty()),
         username: user.map(|u| u.username),
         member: st.federation.member_view(crate::database::now_ms()),
     };

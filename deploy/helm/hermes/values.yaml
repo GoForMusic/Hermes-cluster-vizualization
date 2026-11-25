@@ -23,6 +23,9 @@ hub:
   # HUB_BASE_PATH: serve the hub under a sub-path (e.g. /hermes) when the ingress sends only that path and does not strip it.
   # Empty = the root. Set `ingress.path` to the same value.
   basePath: ""
+  # HUB_PUBLIC_URL: the address people reach the hub at (https://hub.example.com, no path): the single sign-on callback address is built from it.
+  # Empty: taken from the request (the Host and X-Forwarded-* headers of the proxy).
+  publicUrl: ""
   demo: false                  # HUB_DEMO: a development fixture, keep it off
   # Optional: images in the generated agent manifests (the Settings -> Registry page of the web app replaces these)
   agentImage: ""

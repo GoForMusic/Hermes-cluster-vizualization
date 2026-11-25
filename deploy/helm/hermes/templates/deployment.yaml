@@ -36,6 +36,9 @@ spec:
             - { name: HUB_ADDR, value: ":8080" }
             - { name: HUB_WEB, value: /web }
             - { name: HUB_DATA, value: /data }
+            {{- with .Values.hub.publicUrl }}
+            - { name: HUB_PUBLIC_URL, value: {{ . | quote }} }
+            {{- end }}
             {{- with .Values.hub.basePath }}
             - { name: HUB_BASE_PATH, value: {{ . | quote }} }
             {{- end }}

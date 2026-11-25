@@ -19,6 +19,8 @@ pub trait IGroupDAO: Send + Sync {
     fn delete_group(&self, id: i64) -> Result<()>;
     /// Every `(group id, user id)` pair.
     fn memberships(&self) -> Result<Vec<(i64, i64)>>;
+    fn add_member(&self, group: i64, user: i64) -> Result<()>;
+    fn remove_member(&self, group: i64, user: i64) -> Result<()>;
     /// Makes exactly these users the members of the group.
     fn set_members(&self, group: i64, users: &[i64]) -> Result<()>;
 }
@@ -121,6 +123,22 @@ impl IGroupDAO for GroupDAOImp {
         Ok(stmt
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?)
+    }
+
+    fn add_member(&self, group: i64, user: i64) -> Result<()> {
+        self.ctx.conn().execute(
+            "INSERT OR IGNORE INTO group_members(group_id,user_id) VALUES(?1,?2)",
+            params![group, user],
+        )?;
+        Ok(())
+    }
+
+    fn remove_member(&self, group: i64, user: i64) -> Result<()> {
+        self.ctx.conn().execute(
+            "DELETE FROM group_members WHERE group_id=?1 AND user_id=?2",
+            params![group, user],
+        )?;
+        Ok(())
     }
 
     fn set_members(&self, group: i64, users: &[i64]) -> Result<()> {
