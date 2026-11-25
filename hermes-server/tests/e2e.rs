@@ -2127,6 +2127,7 @@ fn crashing_pod(source: &str) -> Vec<Node> {
 async fn an_alert_on_a_pod_keeps_the_last_lines_of_its_log_for_the_incident_report() {
     let rig = Rig::start().await;
     rig.setup_admin(false).await;
+    let mut live = rig.get("/api/stream").await; // a browser that is open when the alert opens
     let source = {
         // the id is only known after the source is added: the topology is made from it
         let (id, token) = rig
@@ -2173,6 +2174,17 @@ async fn an_alert_on_a_pod_keeps_the_last_lines_of_its_log_for_the_incident_repo
             && logs.contains("previous=false tail=200"),
         "{logs}"
     );
+    // the browser that was open is sent the alert again, with the log, and does not have to be reloaded to see it
+    let mut seen = String::new();
+    let found = tokio::time::timeout(Duration::from_secs(5), async {
+        while !seen.contains("before the last restart") {
+            seen.push_str(&String::from_utf8_lossy(
+                &live.chunk().await.unwrap().unwrap(),
+            ));
+        }
+    })
+    .await;
+    assert!(found.is_ok(), "the open stream never got the log: {seen}");
     // only the pod in trouble was read, and nothing but what the alert needs
     assert!(
         asked

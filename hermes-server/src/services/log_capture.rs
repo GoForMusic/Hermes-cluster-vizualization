@@ -38,10 +38,18 @@ pub async fn run(alerts: Arc<dyn IAlertDAO>, store: Arc<dyn IStore>, logs: Arc<L
             }
             let (alerts, store, logs) = (alerts.clone(), store.clone(), logs.clone());
             tokio::spawn(async move {
-                if let Some(text) = capture(&store, &logs, &alert).await
-                    && let Err(e) = alerts.set_alert_logs(alert.id, &text)
-                {
+                let Some(text) = capture(&store, &logs, &alert).await else {
+                    return;
+                };
+                if let Err(e) = alerts.set_alert_logs(alert.id, &text) {
                     warn!("log of alert {}: {e:#}", alert.id);
+                    return;
+                }
+                // the alert was sent to the browsers when it opened, without the log: it is sent again, with it
+                if let Ok(Some(with_log)) = alerts.get_alert(alert.id) {
+                    store.publish(
+                        &serde_json::json!({"type": "alert", "alert": with_log, "isNew": false}),
+                    );
                 }
             });
         }
