@@ -121,7 +121,12 @@ function LogsButton({ node: n, onLogs }: { node: NonNullable<ReturnType<typeof g
   const source = state.sources.find((s) => s.id === cluster?.id);
   if (!cluster || !source) return null;
   const namespace = String(n.meta.ns || '-');
-  if (!can(auth.grants, 'read', `logs/${cluster.id}/${namespace}/${n.name}`)) return null;
+  if (!can(auth.grants, 'read', `logs/${cluster.id}/${namespace}/${n.name}`)) {
+    // the person sees the cluster but may not read its logs: say what is missing, instead of a button that is not there
+    return source.canLogs && !source.dc
+      ? <div className="sec"><h4>Log</h4><p className="muted" style={{ margin: 0 }}>You can see this cluster but not read its logs. That is a separate right: ask for <code>logs/{cluster.id}/*</code>.</p></div>
+      : null;
+  }
   if (source.dc) return <div className="sec"><h4>Log</h4><p className="muted" style={{ margin: 0 }}>This cluster belongs to the datacenter {source.dcName}: read its logs on that hub.</p></div>;
   const containers = cluster.provider === 'kubernetes' ? (n.meta.containers ?? []).map((c) => c.name) : [];
   return (

@@ -122,12 +122,19 @@ describe('the log from the topology', () => {
     expect(screen.queryByRole('button', { name: 'Open the log' })).not.toBeInTheDocument();
   });
 
-  it('offers nothing to somebody whose policies do not let them read it', async () => {
-    const { store } = await page({}, [{ path: 'sources/*', capabilities: ['read'] }]);
+  it('says what is missing to somebody who sees the cluster but may not read its logs', async () => {
+    const { store } = await page({}, [{ path: 'clusters/c', capabilities: ['read'] }]);
     await act(async () => { await store.refreshSources(); });
-    await screen.findByRole('heading', { name: 'Details' });
+    expect(await screen.findByText(/You can see this cluster but not read its logs/)).toHaveTextContent('logs/c/*');
     expect(screen.queryByRole('button', { name: 'Open the log' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Reading logs is off/)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about logs when the source does not read them at all and the person could not change that', async () => {
+    const { store } = await page({ canLogs: false }, [{ path: 'clusters/c', capabilities: ['read'] }]);
+    await act(async () => { await store.refreshSources(); });
+    await screen.findByRole('heading', { name: 'Details' });
+    expect(screen.queryByText(/logs/i)).not.toBeInTheDocument();
   });
 
   it('offers it to somebody who may read that namespace only', async () => {

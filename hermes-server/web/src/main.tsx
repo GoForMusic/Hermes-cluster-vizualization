@@ -8,7 +8,11 @@ import { HubProvider } from './state/context';
 import { HubStore } from './state/HubStore';
 import './styles/app.css';
 
-const client = createHttpHubClient({ onAuthRequired: () => window.dispatchEvent(new Event(AUTH_REQUIRED)) });
+const client = createHttpHubClient({
+  onAuthRequired: () => window.dispatchEvent(new Event(AUTH_REQUIRED)),
+  // the wallboard asks for what the wallboard shows: every cluster when it is public, whatever the policies of whoever is logged in
+  wallboard: () => location.hash.startsWith('#/tv'),
+});
 const store = new HubStore(client);
 
 // `#app` is in index.html, always present: the `!` is safe.

@@ -98,6 +98,10 @@ source is reached from (its endpoint) is shown only to who may read `sources`.
 path "clusters/<source id of the cluster>" { capabilities = ["read"] }
 ```
 
+The TV (`#/tv`) is the wallboard of the room, not of the person: when **View without login** is on it shows every cluster, to anyone, whatever the policies of whoever is
+logged in (the admin panel still shows them only theirs). When it is off, the TV shows what the person may see, unless their group may read **`wallboard`**
+(`path "wallboard" { capabilities = ["read"] }`): then the TV shows every cluster and the admin panel only theirs.
+
 Put the team's group in that policy and leave **everyone** without any: what is not given is refused, so there is no need for a `deny` (and a `deny` on everyone
 would win over what the team is given). The page offers only what the person may read: a team member has Dashboard, Topology, Alerts and their own Profile; Sources,
 Alert rules, Logs and the other settings need a rule for `sources`, `settings` and `comm-log`. Reading the log of a pod is a separate right (`logs/<source id>/...`).

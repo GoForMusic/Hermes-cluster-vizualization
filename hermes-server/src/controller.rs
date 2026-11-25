@@ -430,10 +430,24 @@ fn sight_of(parts: &Parts, state: &Shared, anonymous: bool) -> Result<Arc<Sight>
     if from_link(state, &parts.headers) {
         return Ok(Sight::all(state.authz.clone()));
     }
-    if anonymous && state.auth.public_view() && !state.federation.is_locked() {
+    let session = session_user(state, &parts.headers);
+    // The wallboard (`?view=tv`) shows everything when the admin made it public: it is the one screen that is meant for the room, not for the person.
+    // Somebody who is logged in and looks at the admin panel is shown what their policies let them, whether the wallboard is public or not. Somebody
+    // who is not logged in sees the public wallboard's data.
+    let wallboard = parts
+        .uri
+        .query()
+        .is_some_and(|q| q.split('&').any(|kv| kv == "view=tv"));
+    let public = anonymous && state.auth.public_view() && !state.federation.is_locked();
+    if public && (session.is_none() || wallboard) {
         return Ok(Sight::all(state.authz.clone()));
     }
-    let user = session_user(state, &parts.headers).ok_or_else(login_required)?;
+    let user = session.ok_or_else(login_required)?;
+    // a wallboard that is not public still shows everything to who may read `wallboard`: a group that is given it sees every cluster on the TV, and
+    // only its own in the admin panel
+    if wallboard && state.authz.allowed(&user, Cap::Read, "wallboard") {
+        return Ok(Sight::all(state.authz.clone()));
+    }
     let (cap, path) = policy_request(parts).unwrap_or((Cap::Read, String::new()));
     let sight = Sight::of(user.clone(), state.authz.clone());
     match state.authz.decide(&user, cap, &path) {

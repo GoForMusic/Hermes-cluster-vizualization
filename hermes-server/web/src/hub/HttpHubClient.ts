@@ -8,6 +8,8 @@ type Fetch = typeof fetch;
 type EventSourceFactory = (url: string) => EventSource;
 
 export interface HttpOptions {
+  /** The page is the wallboard (TV): what it reads is asked for as the wallboard's, which shows every cluster when the admin made it public. */
+  wallboard?: () => boolean;
   fetch?: Fetch;
   eventSource?: EventSourceFactory;
   /** Called when a request is refused because there is no session: the app goes back to the login screen. */
@@ -21,6 +23,8 @@ const root = (dc?: string): string => (dc ? `/api/dc/${encodeURIComponent(dc)}` 
 const CSRF = { 'X-Requested-With': 'hermes' };
 
 export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
+  /** The reads that the wallboard makes carry `view=tv`: the hub then shows the wallboard's clusters, not only the ones the person's policies give. */
+  const tv = (path: string): string => (options.wallboard?.() ? `${path}${path.includes('?') ? '&' : '?'}view=tv` : path);
   const doFetch: Fetch = options.fetch ?? ((input, init) => fetch(input, init));
   const onAuth = options.onAuthRequired ?? (() => {});
 
@@ -56,15 +60,15 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       setSessionPolicy: (policy) => call('PUT', '/api/security', policy),
     },
     topology: {
-      snapshot: () => get('/api/snapshot'),
-      info: () => get('/api/info'),
+      snapshot: () => get(tv('/api/snapshot')),
+      info: () => get(tv('/api/info')),
     },
     alerts: {
-      list: (limit = 300) => get(`/api/alerts?limit=${limit}`),
+      list: (limit = 300) => get(tv(`/api/alerts?limit=${limit}`)),
       ack: (id) => send('POST', `/api/alerts/${id}/ack`),
     },
     settings: {
-      load: () => get('/api/settings'),
+      load: () => get(tv('/api/settings')),
       save: (settings) => send('PUT', '/api/settings', settings),
     },
     sources: {
@@ -158,17 +162,17 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       },
     },
     uptime: {
-      load: (span, buckets) => get(`/api/uptime?span=${span}&buckets=${buckets}`),
+      load: (span, buckets) => get(tv(`/api/uptime?span=${span}&buckets=${buckets}`)),
     },
-    feed: sseFeed(options.eventSource ?? ((url) => new EventSource(url))),
+    feed: sseFeed(options.eventSource ?? ((url) => new EventSource(url)), () => tv('/api/stream')),
   };
 }
 
 /** `EventSource` reconnects on its own and every connection starts with a snapshot, so a dropped link heals itself. */
-function sseFeed(create: EventSourceFactory): IEventFeed {
+function sseFeed(create: EventSourceFactory, path: () => string): IEventFeed {
   return {
     connect(handlers: FeedHandlers) {
-      const es = create(withBase('/api/stream'));
+      const es = create(withBase(path()));
       es.onmessage = (e: MessageEvent<string>) => handlers.onEvent(JSON.parse(e.data) as HubEvent);
       es.onopen = () => handlers.onOpen();
       es.onerror = () => handlers.onError(es.readyState === EventSource.CLOSED);

@@ -2545,3 +2545,185 @@ async fn the_public_wallboard_still_shows_everything_when_it_is_public() {
         "the list of sources is not for the wallboard"
     );
 }
+
+#[tokio::test]
+async fn the_wallboard_shows_everything_when_it_is_public_and_the_admin_panel_shows_what_the_policies_say()
+ {
+    let rig = Rig::start().await;
+    rig.setup_admin(true).await; // the wallboard is public
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    let ids = |path: String, c: Client| {
+        let url = rig.url(&path);
+        async move {
+            source_ids(
+                &c.get(url)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()["nodes"],
+            )
+        }
+    };
+    let both = {
+        let mut v = vec![a.clone(), b.clone()];
+        v.sort();
+        v
+    };
+    // logged in, in the admin panel: the cluster of the team, even though the wallboard is public
+    assert_eq!(
+        ids("/api/snapshot".into(), test1.clone()).await,
+        std::slice::from_ref(&a)
+    );
+    let alerts = test1
+        .get(rig.url("/api/alerts"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert!(!alerts.to_string().contains(&format!("{b}:")));
+    // the same person, on the wallboard: everything
+    assert_eq!(
+        ids("/api/snapshot?view=tv".into(), test1.clone()).await,
+        both
+    );
+    let alerts = test1
+        .get(rig.url("/api/alerts?view=tv"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert!(
+        alerts.to_string().contains(&format!("{b}:"))
+            && alerts.to_string().contains(&format!("{a}:"))
+    );
+    // and nobody who is not logged in sees less than the wallboard
+    assert_eq!(ids("/api/snapshot".into(), Client::new()).await, both);
+    // the sources are for the admin panel only: the wallboard does not change them
+    let sources = test1
+        .get(rig.url("/api/sources?view=tv"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(sources.as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_wallboard_that_is_not_public_shows_a_person_what_their_policies_say_too() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (_b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    let snap = test1
+        .get(rig.url("/api/snapshot?view=tv"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(
+        source_ids(&snap["nodes"]),
+        std::slice::from_ref(&a),
+        "a wallboard that was not made public cannot show more than the person may see"
+    );
+    assert_eq!(
+        Client::new()
+            .get(rig.url("/api/snapshot?view=tv"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn a_group_that_may_read_the_wallboard_sees_every_cluster_on_it_and_its_own_in_the_admin_panel()
+ {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await; // the wallboard is not public
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    let ids = |path: &str| {
+        let (c, url) = (test1.clone(), rig.url(path));
+        async move {
+            source_ids(
+                &c.get(url)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()["nodes"],
+            )
+        }
+    };
+    assert_eq!(
+        ids("/api/snapshot?view=tv").await,
+        std::slice::from_ref(&a),
+        "not given the wallboard yet"
+    );
+    // everyone is given it: every logged-in person sees everything on the TV
+    let policy = rig.post("/api/policies", json!({"name": "wallboard", "hcl": "path \"wallboard\" {\n capabilities = [\"read\"]\n}\n"})).await.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let everyone = id_named(
+        &rig.get("/api/groups").await.json::<Value>().await.unwrap(),
+        "everyone",
+    );
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{everyone}/policies"),
+        json!({"policies": [policy]}),
+    )
+    .await;
+    let both = {
+        let mut v = vec![a.clone(), b.clone()];
+        v.sort();
+        v
+    };
+    assert_eq!(ids("/api/snapshot?view=tv").await, both);
+    assert_eq!(
+        ids("/api/snapshot").await,
+        std::slice::from_ref(&a),
+        "and the admin panel is still their cluster"
+    );
+    assert_eq!(
+        Client::new()
+            .get(rig.url("/api/snapshot?view=tv"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+}

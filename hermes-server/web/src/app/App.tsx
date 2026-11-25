@@ -16,7 +16,7 @@ import { useBoot } from './useBoot';
 export function App() {
   const { client } = useHub();
   const route = useHashRoute();
-  const { phase, reboot, refreshAuth } = useBoot(route.view === 'admin');
+  const { phase, reboot, refreshAuth } = useBoot(route.view === 'admin', route.view === 'tv');
   const [registryStep, setRegistryStep] = useState(false); // the account is made: the second step of the setup follows
   const [pairingCode, setPairingCode] = useState<MemberCode | null>(null); // the code just made, which is only ever shown once
 

@@ -92,3 +92,33 @@ describe('under a base path (HUB_BASE_PATH)', () => {
     expect(hubAddress()).toBe(location.origin + '/hermes');
   });
 });
+
+describe('the wallboard', () => {
+  it('asks for what the wallboard shows, and the admin panel for what the person may see', async () => {
+    const urls: string[] = [];
+    let tv = false;
+    const client = createHttpHubClient({
+      wallboard: () => tv,
+      fetch: (async (url: string) => { urls.push(url); return new Response('{}'); }) as unknown as typeof fetch,
+      eventSource: ((url: string) => { urls.push(url); return { close() {} } as EventSource; }),
+    });
+    await client.topology.snapshot();
+    await client.alerts.list(50);
+    await client.uptime.load(3600, 10);
+    client.feed.connect({ onEvent() {}, onOpen() {}, onError() {} })();
+    expect(urls).toEqual(['/api/snapshot', '/api/alerts?limit=50', '/api/uptime?span=3600&buckets=10', '/api/stream']);
+    urls.length = 0;
+    tv = true;
+    await client.topology.snapshot();
+    await client.topology.info();
+    await client.settings.load();
+    await client.alerts.list(50);
+    await client.uptime.load(3600, 10);
+    client.feed.connect({ onEvent() {}, onOpen() {}, onError() {} })();
+    expect(urls).toEqual(['/api/snapshot?view=tv', '/api/info?view=tv', '/api/settings?view=tv', '/api/alerts?limit=50&view=tv', '/api/uptime?span=3600&buckets=10&view=tv', '/api/stream?view=tv']);
+    // what is only for the panel is not asked for as the wallboard's
+    urls.length = 0;
+    await client.sources.list();
+    expect(urls).toEqual(['/api/sources']);
+  });
+});

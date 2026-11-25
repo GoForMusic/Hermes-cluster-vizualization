@@ -22,7 +22,7 @@ export type Phase =
 export const AUTH_REQUIRED = 'hermes:auth-required';
 
 /** `admin`: the page being opened is the admin panel, which needs a login whatever the wallboard settings say. */
-export function useBoot(admin: boolean): { phase: Phase; reboot: () => void; refreshAuth: () => Promise<void> } {
+export function useBoot(admin: boolean, wallboard = false): { phase: Phase; reboot: () => void; refreshAuth: () => Promise<void> } {
   const { client, store } = useHub();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -30,6 +30,14 @@ export function useBoot(admin: boolean): { phase: Phase; reboot: () => void; ref
   const adminRef = useRef(admin);
   adminRef.current = admin;
   const reboot = useCallback(() => setAttempt((n) => n + 1), []);
+  // the wallboard and the admin panel are shown different data (every cluster, and what the policies give): going from one to the other loads it again
+  const wasWallboard = useRef(wallboard);
+  useEffect(() => {
+    if (wasWallboard.current !== wallboard) {
+      wasWallboard.current = wallboard;
+      reboot();
+    }
+  }, [wallboard, reboot]);
 
   useEffect(() => {
     let cancelled = false;
