@@ -84,6 +84,8 @@ loses what they could do. Afterwards they are yours: edit or delete them, or add
 
 Single sign-on with an identity provider (OpenID Connect) is in [sso.md](sso.md).
 
+Reading the logs of containers through the agents is in [logs.md](logs.md).
+
 ### How long a login lasts
 
 Settings → Security (`GET/PUT /api/security`, stored in `settings` as `auth.session_policy`): **log out after** N hours (1 to 720, 336 = 14 days by default) however busy the

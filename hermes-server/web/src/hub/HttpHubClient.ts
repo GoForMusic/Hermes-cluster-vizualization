@@ -123,6 +123,40 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       remove: (id) => send('DELETE', `/api/identity-providers/${encodeURIComponent(id)}`),
       test: (issuer) => call('POST', '/api/identity-providers/test', { issuer }),
     },
+    logs: {
+      open(source, namespace, name, options, handlers) {
+        const stop = new AbortController();
+        const q = new URLSearchParams({ tail: String(options.tail) });
+        if (options.follow) q.set('follow', 'true');
+        if (options.previous) q.set('previous', 'true');
+        if (options.timestamps) q.set('timestamps', 'true');
+        if (options.container) q.set('container', options.container);
+        if (options.task) q.set('task', options.task);
+        const path = [source, namespace, name].map(encodeURIComponent).join('/');
+        void (async () => {
+          let finished = false;
+          try {
+            const res = await doFetch(withBase(`/api/logs/${path}?${q}`), { signal: stop.signal, cache: 'no-store' });
+            if (!res.ok) {
+              const data = (await res.json().catch(() => null)) as { error?: string; auth?: boolean } | null;
+              if (res.status === 401 && data?.auth === true) onAuth();
+              finished = true;
+              handlers.onError(data?.error ?? res.statusText);
+              return;
+            }
+            await readEvents(res, (event, data) => {
+              if (event === 'end') { finished = true; handlers.onEnd(); }
+              else if (event === 'failed') { finished = true; handlers.onError((JSON.parse(data) as { error: string }).error); }
+              else if (event === 'message') handlers.onLines((JSON.parse(data) as { lines: string[] }).lines);
+            });
+            if (!finished && !stop.signal.aborted) handlers.onError('The connection to the hub closed.');
+          } catch (e) {
+            if (!stop.signal.aborted && !finished) handlers.onError(e instanceof Error ? e.message : String(e));
+          }
+        })();
+        return () => stop.abort();
+      },
+    },
     uptime: {
       load: (span, buckets) => get(`/api/uptime?span=${span}&buckets=${buckets}`),
     },
@@ -141,4 +175,31 @@ function sseFeed(create: EventSourceFactory): IEventFeed {
       return () => es.close();
     },
   };
+}
+
+/** Reads a Server-Sent Events response as it arrives: `onEvent(name, data)` for each event ("message" when it has no name). Comments are skipped. */
+async function readEvents(res: Response, onEvent: (event: string, data: string) => void): Promise<void> {
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const dispatch = (block: string): void => {
+    let event = 'message';
+    const data: string[] = [];
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+    }
+    if (data.length) onEvent(event, data.join('\n'));
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    let at: number;
+    while ((at = buffer.indexOf('\n\n')) >= 0) {
+      dispatch(buffer.slice(0, at));
+      buffer = buffer.slice(at + 2);
+    }
+  }
 }

@@ -111,6 +111,7 @@ function AgentsLine({ source: s }: { source: SourceView }) {
       Agent {versions.join(', ')}{live.length > 1 ? ` · ${live.length} instances` : ''}
       {behind ? <StatusChip status="warn">{behind > 1 ? `${behind} behind` : 'update'} → v{s.expectedAgent}</StatusChip> : null}
       {oldProtocol ? <StatusChip status="warn">old protocol — upgrade the agent</StatusChip> : null}
+      {s.canLogs ? <StatusChip status="ok">logs</StatusChip> : null}
     </div>
   );
 }
@@ -209,6 +210,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
   const [flows, setFlows] = useState(false);
   const [windows, setWindows] = useState(false);
   const [upgrades, setUpgrades] = useState(true);
+  const [logs, setLogs] = useState(false);
   const [version, setVersion] = useState('');
   const [dc, setDc] = useState(''); // which hub hosts the source: '' is this one
   const { view } = useFederation(open);
@@ -220,7 +222,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
   const { busy, error, submit } = useAsyncSubmit(async () => {
     if (registry.configured && !registry.implicit && !(version || registry.versions[0])) throw new Error('The registry has no agent version to install yet: push the agent image there first.');
     const added = await store.addSource({
-      name, type: chosen, endpoint: '', hubUrl, flows: kubernetes && flows, upgrades: upgrades && !docker,
+      name, type: chosen, endpoint: '', hubUrl, flows: kubernetes && flows, upgrades: upgrades && !docker, logs,
       version: registry.configured ? version || registry.versions[0] || '' : '', windows: registry.configured && !kubernetes && windows,
     }, dc || undefined);
     setName('');
@@ -270,6 +272,15 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
               </span>
             </span>
           </label>}
+          <label className="check">
+            <input type="checkbox" checked={logs} onChange={(e) => setLogs(e.target.checked)} />
+            <span>
+              <b>Allow reading container logs</b>
+              <span className="muted">
+                Lets you open the log of a pod or container from the topology, and keeps the last lines with an alert for what is crashing. {kubernetes ? 'The agent gets the right to read pod logs (pods/log, get) and nothing more.' : 'It reads them through the Docker socket it already has.'} Logs can contain secrets: who may read which log is decided by policies (<code>logs/…</code>). Off by default.
+              </span>
+            </span>
+          </label>
           {kubernetes ? (
             <label className="check">
               <input type="checkbox" checked={flows} onChange={(e) => setFlows(e.target.checked)} />

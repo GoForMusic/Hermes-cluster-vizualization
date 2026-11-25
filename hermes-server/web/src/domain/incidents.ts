@@ -90,6 +90,7 @@ export function incidentMarkdown(alert: Alert, f: IncidentFacts): string {
     const cs = snapshotContainers(f.snapshot);
     if (cs.length) lines.push('', '**Containers**', '', ...cs.map((c) => `- ${c.name} (${c.image}): ${c.state}, ${c.restarts} restart${c.restarts === 1 ? '' : 's'}${c.ready ? '' : ', not ready'}`));
   }
+  if (alert.logs) lines.push('', '**The log of the container** (the last lines, kept when the alert opened)', '', '```', ...alert.logs.trimEnd().split('\n').slice(-80), '```');
   if (f.overlapping.length) lines.push('', '**Also down meanwhile**', '', ...f.overlapping.map((o) => `- ${o.title} (${when(o.ts)}${o.resolvedTs ? `, ${fmtDur(o.resolvedTs - o.ts)}` : ', still open'})`));
   return lines.join('\n');
 }

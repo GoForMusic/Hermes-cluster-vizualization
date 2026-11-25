@@ -48,6 +48,13 @@ export function IncidentReport({ alert, onClose, onOpen }: { alert: Alert | null
               ) : null}
             </>
           ) : null}
+          {a.logs ? (
+            <>
+              <h3>The log of the container</h3>
+              <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>The last lines, read when the alert opened: the container may be gone by now, and its log with it.</p>
+              <pre className="report-log">{a.logs}</pre>
+            </>
+          ) : null}
           {f.overlapping.length ? (
             <>
               <h3>Also down meanwhile</h3>

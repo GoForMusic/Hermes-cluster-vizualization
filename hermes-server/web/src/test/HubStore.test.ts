@@ -52,7 +52,7 @@ describe('the store', () => {
     const { hub, store } = await loaded();
     store.startLive();
     hub.calls.length = 0;
-    hub.sources = [{ id: 's', name: 'lab', type: 'Docker Swarm (agent)', endpoint: '', auth: '', state: 'connected', info: '', agents: [], canUpgrade: false }];
+    hub.sources = [{ id: 's', name: 'lab', type: 'Docker Swarm (agent)', endpoint: '', auth: '', state: 'connected', info: '', agents: [], canUpgrade: false, canLogs: false }];
     push(hub, { type: 'sources' });
     await vi.waitFor(() => expect(store.getState().sources).toHaveLength(1));
     expect(hub.calls).toContain('sources.list');
