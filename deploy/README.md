@@ -63,7 +63,7 @@ helm install hermes ./deploy/helm/hermes -n hermes --create-namespace \
 
 When a firewall lets the main hub reach a zone but not the other way round, install a second hub there with the same compose or Helm files, choose
 *Managed by another hub* on its first start, and add it in the main hub (Settings → Federation). It then has no login and is managed from the main
-hub. See [docs/federation.md](../docs/federation.md). To undo it by hand, restart that hub once with `HUB_FEDERATION=off`.
+hub. See [the federation guide](../docs/content/federation.md). To undo it by hand, restart that hub once with `HUB_FEDERATION=off`.
 
 ## Agents
 

@@ -1256,7 +1256,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hermes-agent-linux"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1286,7 +1286,7 @@ dependencies = [
 
 [[package]]
 name = "hermes-agent-windows"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "hermes-agentkit",
@@ -1299,7 +1299,7 @@ dependencies = [
 
 [[package]]
 name = "hermes-agentkit"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "gethostname",
@@ -1314,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "hermes-hub"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "hermes-proto"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "http",
  "prost",
@@ -1373,7 +1373,7 @@ dependencies = [
 
 [[package]]
 name = "hermes-swarm"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "axum",
