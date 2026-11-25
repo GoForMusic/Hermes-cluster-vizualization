@@ -649,3 +649,24 @@ dialog h2 { margin: 0 0 14px; font-size: 18px; }
 .logdock-error { color: var(--crit); padding: 6px 0; font-family: var(--font); font-size: 13px; }
 
 .report-log { max-height: 260px; overflow: auto; margin: 0 0 8px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 8px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-all; }
+
+/* what the parts of a log line are */
+.logline .tk-time { color: #7f8ea3; }
+.logline .tk-key { color: #7aa2f7; }
+.logline .tk-str { color: #9ece6a; }
+.logline .tk-num { color: #ff9e64; }
+.logline .tk-bool { color: #ff9e64; font-style: italic; }
+.logline .tk-ip { color: #2ac3de; }
+.logline .tk-url, .logline .tk-path { color: #73daca; }
+.logline .tk-method { color: #bb9af7; font-weight: 600; }
+.logline .tk-tag { color: #e0af68; }
+.logline .tk-s2 { color: var(--ok); font-weight: 600; }
+.logline .tk-s3 { color: #2ac3de; font-weight: 600; }
+.logline .tk-s4 { color: var(--warn); font-weight: 600; }
+.logline .tk-s5 { color: var(--crit); font-weight: 700; }
+.logline .tk-lvl-trace { color: #565f89; }
+.logline .tk-lvl-debug { color: #7f8ea3; }
+.logline .tk-lvl-info { color: #2ac3de; font-weight: 600; }
+.logline .tk-lvl-warn { color: var(--warn); font-weight: 700; }
+.logline .tk-lvl-error { color: var(--crit); font-weight: 700; }
+/* a line that is an error or a warning keeps its colour for the text that is nothing in particular */

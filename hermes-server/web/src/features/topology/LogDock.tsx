@@ -1,6 +1,7 @@
 // The log of a container, in a panel at the bottom of the page (like the devtools of a browser): it stays open while the map is used above it.
 // The lines are streamed from the agent through the hub as they are read; nothing is kept, and closing the panel stops the reading.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { highlight } from '../../domain/logSyntax';
 import { useClient } from '../../state/context';
 import { Icon } from '../../ui/icons';
 
@@ -36,6 +37,7 @@ export function LogDock({ target, onClose }: { target: LogTarget; onClose: () =>
   const [previous, setPrevious] = useState(false);
   const [timestamps, setTimestamps] = useState(false);
   const [wrap, setWrap] = useState(false);
+  const [colours, setColours] = useState(true);
   const [query, setQuery] = useState('');
   const [lines, setLines] = useState<string[]>([]);
   const [status, setStatus] = useState<Status>('connecting');
@@ -106,6 +108,7 @@ export function LogDock({ target, onClose }: { target: LogTarget; onClose: () =>
         <button className={`pill${follow ? ' on' : ''}`} aria-pressed={follow} title="Show new lines as they are written" onClick={() => setFollow(!follow)}>Follow</button>
         <button className={`pill${timestamps ? ' on' : ''}`} aria-pressed={timestamps} onClick={() => setTimestamps(!timestamps)}>Timestamps</button>
         <button className={`pill${wrap ? ' on' : ''}`} aria-pressed={wrap} onClick={() => setWrap(!wrap)}>Wrap</button>
+        <button className={`pill${colours ? ' on' : ''}`} aria-pressed={colours} title="Colour the times, levels, methods, statuses, keys and values" onClick={() => setColours(!colours)}>Colours</button>
         <select aria-label="Last lines" value={tail} onChange={(e) => setTail(Number(e.target.value))}>
           {TAILS.map((t) => <option key={t} value={t}>last {t}</option>)}
         </select>
@@ -121,7 +124,7 @@ export function LogDock({ target, onClose }: { target: LogTarget; onClose: () =>
         {status === 'failed' ? <div className="logdock-error" role="alert">{error}</div> : null}
         {matching.length > SHOWN ? <div className="muted">… {matching.length - SHOWN} earlier lines are not shown (narrow it with the search, or Download)</div> : null}
         {shown.map((l, i) => (
-          <div key={i} className={`logline ${levelOf(l)}`}>{text ? <Marked line={l} text={text} /> : l || ' '}</div>
+          <div key={i} className={`logline ${levelOf(l)}`}><Line line={l} text={text} colours={colours} /></div>
         ))}
         {status === 'ended' && !lines.length ? <div className="muted">The log is empty.</div> : null}
       </div>
@@ -129,7 +132,18 @@ export function LogDock({ target, onClose }: { target: LogTarget; onClose: () =>
   );
 }
 
-/** The line with what was searched for marked. */
+/** One line: coloured by what its parts are (see `highlight`), with what was searched for marked inside the colours. */
+function Line({ line, text, colours }: { line: string; text: string; colours: boolean }) {
+  if (!line) return <> </>;
+  if (!colours) return text ? <Marked line={line} text={text} /> : <>{line}</>;
+  return (
+    <>
+      {highlight(line).map((p, i) => (p.kind ? <span key={i} className={p.kind}>{text ? <Marked line={p.text} text={text} /> : p.text}</span> : <Fragment key={i}>{text ? <Marked line={p.text} text={text} /> : p.text}</Fragment>))}
+    </>
+  );
+}
+
+/** The text with what was searched for marked. */
 function Marked({ line, text }: { line: string; text: string }) {
   const lower = line.toLowerCase();
   const parts: React.ReactNode[] = [];

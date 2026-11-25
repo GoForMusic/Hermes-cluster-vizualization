@@ -10,6 +10,9 @@ import type { IncidentAlert } from './incidentFixture';
 import { renderWithHub } from './render';
 import { IncidentReport } from '../features/admin/IncidentReport';
 
+/** A line of the log by its whole text: the colours split it into pieces, each its own element. */
+const line = (t: string): Promise<HTMLElement> => screen.findByText((_, el) => !!el?.classList.contains('logline') && el.textContent === t);
+
 const target = (over: Partial<LogTarget> = {}): LogTarget => ({ source: 's1', namespace: 'shop', name: 'web-1', containers: ['app', 'sidecar'], ...over });
 
 const open = (over: Partial<LogTarget> = {}, prepare?: (hub: import('./fakeHub').FakeHub) => void) =>
@@ -20,8 +23,8 @@ describe('the log panel', () => {
     const { hub } = await open({}, (h) => { h.logLines = ['starting', 'ERROR: it broke', 'WARN: careful']; });
     expect(await screen.findByText('starting')).toBeInTheDocument();
     expect(hub.calls).toContain('logs.open:s1/shop/web-1:app:200:true:false:false:');
-    expect(screen.getByText('ERROR: it broke')).toHaveClass('lg-err');
-    expect(screen.getByText('WARN: careful')).toHaveClass('lg-warn');
+    expect(await line('ERROR: it broke')).toHaveClass('lg-err');
+    expect(await line('WARN: careful')).toHaveClass('lg-warn');
     expect(screen.getByRole('status')).toHaveTextContent('Live');
     expect(screen.getByText('3 lines')).toBeInTheDocument();
   });
@@ -70,10 +73,10 @@ describe('the log panel', () => {
   it('searches the lines it has, marks the match and counts', async () => {
     const user = userEvent.setup();
     await open({}, (h) => { h.logLines = ['GET /health 200', 'POST /orders 500', 'GET /orders 200']; });
-    await screen.findByText('POST /orders 500');
+    await line('POST /orders 500');
     await user.type(screen.getByLabelText('Search the log'), 'orders');
     expect(screen.getByText('2 of 3')).toBeInTheDocument();
-    expect(screen.queryByText('GET /health 200')).not.toBeInTheDocument();
+    expect(screen.queryByText((_, el) => !!el?.classList.contains('logline') && el.textContent === 'GET /health 200')).not.toBeInTheDocument();
     expect(document.querySelectorAll('.logline mark')).toHaveLength(2);
   });
 
@@ -86,8 +89,8 @@ describe('the log panel', () => {
   it('keeps the last 20000 lines and says that the rest are not shown', async () => {
     const lines = Array.from({ length: 5200 }, (_, i) => `line ${i}`);
     await open({}, (h) => { h.logLines = lines; });
-    expect(await screen.findByText('line 5199')).toBeInTheDocument();
-    expect(screen.queryByText('line 0')).not.toBeInTheDocument();
+    expect(await line('line 5199')).toBeInTheDocument();
+    expect(screen.queryByText((_, el) => !!el?.classList.contains('logline') && el.textContent === 'line 0')).not.toBeInTheDocument();
     expect(screen.getByText(/200 earlier lines are not shown/)).toBeInTheDocument();
   });
 });
@@ -210,3 +213,30 @@ describe('the log in the incident report', () => {
 });
 
 void within;
+
+describe('the colours of the log', () => {
+  it('colours the parts of a line, and the Colours button turns it off', async () => {
+    const user = userEvent.setup();
+    await open({}, (h) => { h.logLines = ['2026-11-25T10:00:00Z INFO listening port=8080', '10.0.0.1 - - [25/Nov/2026:10:09:40 +0000] "GET /big HTTP/1.1" 502 12']; });
+    await screen.findByText('INFO');
+    expect(screen.getByText('INFO')).toHaveClass('tk-lvl-info');
+    expect(screen.getByText('2026-11-25T10:00:00Z')).toHaveClass('tk-time');
+    expect(screen.getByText('port')).toHaveClass('tk-key');
+    expect(screen.getByText('8080')).toHaveClass('tk-num');
+    expect(screen.getByText('GET')).toHaveClass('tk-method');
+    expect(screen.getByText('502')).toHaveClass('tk-s5');
+    await user.click(screen.getByRole('button', { name: 'Colours' }));
+    expect(document.querySelectorAll('.logline span[class^="tk-"]')).toHaveLength(0);
+    expect(screen.getByText('2026-11-25T10:00:00Z INFO listening port=8080')).toBeInTheDocument();
+  });
+
+  it('still marks what is searched for, inside the colours', async () => {
+    const user = userEvent.setup();
+    await open({}, (h) => { h.logLines = ['2026-11-25T10:00:00Z ERROR payment failed order=77']; });
+    await screen.findByText('ERROR');
+    await user.type(screen.getByLabelText('Search the log'), 'fail');
+    const mark = document.querySelector('.logline mark');
+    expect(mark).toHaveTextContent('fail');
+    expect(screen.getByText('ERROR')).toHaveClass('tk-lvl-error');
+  });
+});
