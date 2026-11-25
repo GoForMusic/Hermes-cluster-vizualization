@@ -3,7 +3,10 @@
 //! an old agent must survive what the new hub sends. proto3 gives this as long as fields are only added, never renumbered or reused; this
 //! test is the one that says so when someone forgets.
 
-use hermes_proto::v1::{AgentMessage, Hello, HubMessage, Upgrade, agent_message, hub_message};
+use hermes_proto::v1::{
+    AgentMessage, Hello, HubMessage, LogCancel, LogChunk, LogRequest, Upgrade, agent_message,
+    hub_message,
+};
 use prost::Message;
 
 /// `Hello` before `features` (field 6) and `UpgradeStatus` existed.
@@ -116,6 +119,67 @@ fn a_new_hello_is_read_by_an_old_hub() {
         panic!("not a hello")
     };
     assert_eq!((h.agent.as_str(), h.version.as_str()), ("a", "1.0.5"));
+}
+
+#[test]
+fn an_old_agent_ignores_a_request_for_a_log_and_an_old_hub_ignores_what_comes_back() {
+    let ask = HubMessage {
+        message: Some(hub_message::Message::LogRequest(LogRequest {
+            id: 7,
+            namespace: "shop".into(),
+            name: "web-1".into(),
+            tail: 200,
+            ..Default::default()
+        })),
+    };
+    assert_eq!(
+        OldHubMessage::decode(ask.encode_to_vec().as_slice())
+            .unwrap()
+            .message,
+        None
+    );
+    let cancel = HubMessage {
+        message: Some(hub_message::Message::LogCancel(LogCancel { id: 7 })),
+    };
+    assert_eq!(
+        OldHubMessage::decode(cancel.encode_to_vec().as_slice())
+            .unwrap()
+            .message,
+        None
+    );
+    let answer = AgentMessage {
+        message: Some(agent_message::Message::LogChunk(LogChunk {
+            id: 7,
+            lines: vec!["a line".into()],
+            ..Default::default()
+        })),
+    };
+    assert_eq!(
+        OldAgentMessage::decode(answer.encode_to_vec().as_slice())
+            .unwrap()
+            .message,
+        None
+    );
+}
+
+#[test]
+fn the_log_messages_keep_the_numbers_they_were_given() {
+    // the bytes of a request as another build wrote them: field 1 = id 7, 2 = "ns", 3 = "p", 6 = follow, 7 = previous, 10 = task "t"
+    let wire: &[u8] = &[
+        0x08, 7, 0x12, 2, b'n', b's', 0x1a, 1, b'p', 0x30, 1, 0x38, 1, 0x52, 1, b't',
+    ];
+    let got = LogRequest::decode(wire).unwrap();
+    assert_eq!(
+        (
+            got.id,
+            got.namespace.as_str(),
+            got.name.as_str(),
+            got.follow,
+            got.previous,
+            got.task.as_str()
+        ),
+        (7, "ns", "p", true, true, "t")
+    );
 }
 
 // ---- the master <-> member contract -----------------------------------------------------------------------------

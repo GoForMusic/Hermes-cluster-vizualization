@@ -17,8 +17,8 @@ use crate::controller;
 use crate::database::{Repositories, now_ms};
 use crate::services::{
     AccessImp, AuthImp, AuthzImp, CommLogImp, EngineImp, FederationImp, GuardImp, IAccess, IAuth,
-    IAuthz, IEngine, IGuard, IIngestService, IStore, IngestServiceImp, MasterLinks, SharedCommLog,
-    SharedFederation, SharedUpgrades, SsoImp, StoreImp, UpgradeServiceImp,
+    IAuthz, IEngine, IGuard, IIngestService, IStore, IngestServiceImp, LogServiceImp, MasterLinks,
+    SharedCommLog, SharedFederation, SharedUpgrades, SsoImp, StoreImp, UpgradeServiceImp,
 };
 
 pub struct Settings {
@@ -58,6 +58,10 @@ pub struct AppState {
     pub guard: Arc<dyn IGuard>,
     /// Which agents can change their own image, and how the version changes asked for are going.
     pub upgrades: SharedUpgrades,
+    /// Reading the logs of containers through the agents (nothing is kept).
+    pub logs: Arc<LogServiceImp>,
+    /// How many logs are being read at once, over the whole hub.
+    pub log_slots: Arc<tokio::sync::Semaphore>,
     /// What agents and the hub said to each other; off until an admin turns it on.
     pub comm_log: SharedCommLog,
     /// Whether this hub is managed by another one (a member) or controls datacenters (a master), and the pairing between the two.
@@ -171,6 +175,10 @@ impl Hub {
             db,
             guard,
             upgrades: Arc::new(UpgradeServiceImp::new()),
+            logs: LogServiceImp::new(),
+            log_slots: Arc::new(tokio::sync::Semaphore::new(
+                crate::controller::MAX_LOG_STREAMS,
+            )),
             comm_log,
             federation,
             links,

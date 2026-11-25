@@ -6,7 +6,7 @@ use anyhow::Result;
 use hermes_proto::v1::CollectorState;
 use tracing::{info, warn};
 
-use crate::{Config, SharedSink, SharedUpgrader, Uplink};
+use crate::{Config, SharedLogs, SharedSink, SharedUpgrader, Uplink};
 
 const RESTART_AFTER: Duration = Duration::from_secs(10);
 
@@ -29,9 +29,26 @@ where
     F: Fn(SharedSink) -> Fut,
     Fut: Future<Output = Result<()>>,
 {
+    run_with_logs(cfg, upgrader, None, collect).await
+}
+
+/// [`run_with`] for an agent that can also read the logs of the containers it reports (`logs`); the hub is told it can.
+pub async fn run_with_logs<F, Fut>(
+    cfg: Config,
+    upgrader: Option<SharedUpgrader>,
+    logs: Option<SharedLogs>,
+    collect: F,
+) -> Result<()>
+where
+    F: Fn(SharedSink) -> Fut,
+    Fut: Future<Output = Result<()>>,
+{
     let mut uplink = Uplink::new(&cfg)?;
     if let Some(upgrader) = upgrader {
         uplink = uplink.with_upgrader(upgrader);
+    }
+    if let Some(logs) = logs {
+        uplink = uplink.with_logs(logs);
     }
     let link = tokio::spawn(uplink.clone().run());
     info!(source = %cfg.source_id, name = %cfg.source_name, collector = %cfg.collector, version = %cfg.version, hub = %cfg.hub_url, "agent started");

@@ -15,6 +15,7 @@ mod comm_log_controller;
 mod federation_controller;
 mod federation_link_controller;
 mod live_controller;
+mod logs_controller;
 mod registry_controller;
 mod settings_controller;
 mod sources_controller;
@@ -41,6 +42,8 @@ use crate::services::{IIngestService, SharedCommLog, SharedUpgrades};
 use crate::version::VERSION;
 
 type Shared = Arc<AppState>;
+
+pub use logs_controller::MAX_LOG_STREAMS;
 
 const COOKIE_NAME: &str = "hermes_session";
 /// A custom header cannot be sent cross-origin without a CORS preflight: its presence is the proof that the page is ours.
@@ -98,6 +101,10 @@ pub fn routes(state: Shared) -> Router {
         .route(
             "/api/registry/versions",
             get(registry_controller::registry_versions),
+        )
+        .route(
+            "/api/logs/{source}/{*target}",
+            get(logs_controller::read_log),
         )
         .route(
             "/api/identity-providers",
@@ -186,7 +193,7 @@ pub fn agent_routes(
     upgrades: SharedUpgrades,
     comm_log: SharedCommLog,
 ) -> Router {
-    let routes = agent_controller::routes(ingest, upgrades, comm_log);
+    let routes = agent_controller::routes(ingest, upgrades, state.logs.clone(), comm_log);
     federation_link_controller::add(routes, state).into_axum_router()
 }
 

@@ -14,6 +14,7 @@ mod federation_master;
 mod guard_imp;
 mod ingest_service_imp;
 mod judge;
+mod log_service_imp;
 mod rule;
 mod sso_imp;
 mod store_imp;
@@ -28,6 +29,7 @@ pub use federation_imp::{CODE_TTL_MS, FedError, FederationImp, IFederation, Shar
 pub use federation_master::{IRemoteSources, LinkError, MasterLinks};
 pub use guard_imp::{Duplicate, GuardImp, IGuard};
 pub use ingest_service_imp::{AgentInfo, Event, HelloInfo, IIngestService, IngestServiceImp};
+pub use log_service_imp::{LogEvent, LogOpenError, LogOptions, LogServiceImp, LogStream};
 pub use sso_imp::{Begin, SsoError, SsoImp};
 pub use store_imp::{IStore, StoreImp};
 pub use upgrade_service_imp::{

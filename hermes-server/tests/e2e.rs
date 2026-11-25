@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use std::sync::{Arc, Mutex};
 
-use hermes_agentkit::{Config, ISink, IUpgrader, Timing, UpgradeOutcome, Uplink};
+use hermes_agentkit::{
+    Config, ILogs, ISink, IUpgrader, LogError, LogQuery, Timing, UpgradeOutcome, Uplink,
+};
 use hermes_hub::app::{Hub, Settings};
 use hermes_hub::database::Repositories;
 use hermes_proto::v1::{Node, NodeKind, Own, Provider};
@@ -1823,4 +1825,259 @@ async fn a_second_source_with_the_name_of_another_is_refused_in_any_case() {
         )
         .await;
     assert_eq!(other.status(), StatusCode::CREATED);
+}
+
+// ---- logs ------------------------------------------------------------------------------------------------------
+
+/// What the agent of a cluster that allows logs says: a few lines for a pod, an endless log for another, nothing for a pod that is not there.
+struct PodLogs {
+    stopped: Arc<Mutex<Vec<String>>>,
+    asked: Arc<Mutex<Vec<LogQuery>>>,
+}
+
+#[tonic::async_trait]
+impl ILogs for PodLogs {
+    async fn read(
+        &self,
+        q: LogQuery,
+        out: tokio::sync::mpsc::Sender<Vec<String>>,
+    ) -> Result<(), LogError> {
+        self.asked.lock().unwrap().push(q.clone());
+        match q.name.as_str() {
+            "ghost" => Err(LogError::NotHere(format!(
+                "pod {}/ghost not found",
+                q.namespace
+            ))),
+            "endless" => {
+                struct Note(Arc<Mutex<Vec<String>>>);
+                impl Drop for Note {
+                    fn drop(&mut self) {
+                        self.0.lock().unwrap().push("stopped".into());
+                    }
+                }
+                let _note = Note(self.stopped.clone());
+                loop {
+                    if out.send(vec!["tick".into()]).await.is_err() {
+                        return Ok(());
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+            _ => {
+                let _ = out
+                    .send(vec![
+                        "starting".into(),
+                        format!("previous={} tail={}", q.previous, q.tail),
+                    ])
+                    .await;
+                let _ = out.send(vec!["ready".into()]).await;
+                Ok(())
+            }
+        }
+    }
+}
+
+impl Rig {
+    /// A cluster reader that can read logs, connected: its source id.
+    async fn source_with_logs(&self) -> (String, PodLogs) {
+        let (id, token) = self
+            .add_source_named("Kubernetes (agent)", "pod reader")
+            .await;
+        let logs = PodLogs {
+            stopped: Arc::default(),
+            asked: Arc::default(),
+        };
+        let seen = PodLogs {
+            stopped: logs.stopped.clone(),
+            asked: logs.asked.clone(),
+        };
+        let agent = self.agent(&id, &token).with_logs(Arc::new(logs));
+        agent.set_topology(vec![cluster(&id)], vec![]);
+        tokio::spawn(agent.run());
+        eventually("the agent that reads logs is connected", || async {
+            {
+                let list = self
+                    .get("/api/sources")
+                    .await
+                    .json::<Value>()
+                    .await
+                    .unwrap();
+                list.as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|s| s["id"] == id && s["canLogs"] == true)
+            }
+        })
+        .await;
+        (id, seen)
+    }
+}
+
+#[tokio::test]
+async fn the_log_of_a_pod_is_streamed_to_the_browser_and_ends() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (id, agent) = rig.source_with_logs().await;
+    let r = rig
+        .get(&format!(
+            "/api/logs/{id}/shop/web-1?tail=3&previous=true&container=app"
+        ))
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(r.headers()["content-type"], "text/event-stream");
+    let body = r.text().await.unwrap();
+    assert!(
+        body.contains(r#"data: {"lines":["starting","previous=true tail=3"]}"#),
+        "{body}"
+    );
+    assert!(body.contains(r#"data: {"lines":["ready"]}"#), "{body}");
+    assert!(body.contains("event: end"), "{body}");
+    let asked = agent.asked.lock().unwrap().clone();
+    assert_eq!(
+        (
+            asked[0].namespace.as_str(),
+            asked[0].name.as_str(),
+            asked[0].container.as_str(),
+            asked[0].previous
+        ),
+        ("shop", "web-1", "app", true)
+    );
+}
+
+#[tokio::test]
+async fn what_cannot_be_read_says_why() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    // a source that no agent of reads logs for: told how to change that
+    let (plain, token) = rig.add_source("Docker Swarm (agent)").await;
+    let agent = rig.agent(&plain, &token);
+    agent.set_topology(vec![cluster(&plain)], vec![]);
+    tokio::spawn(agent.run());
+    eventually("connected", || async {
+        rig.get("/api/sources").await.json::<Value>().await.unwrap()[0]["state"] == "connected"
+    })
+    .await;
+    let r = rig.get(&format!("/api/logs/{plain}/shop/web-1")).await;
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+    assert!(
+        r.json::<Value>().await.unwrap()["error"]
+            .as_str()
+            .unwrap()
+            .contains("Allow reading container logs")
+    );
+    assert_eq!(
+        rig.get("/api/logs/nope/shop/web-1").await.status(),
+        StatusCode::NOT_FOUND
+    );
+
+    let (id, _) = rig.source_with_logs().await;
+    let ghost = rig.get(&format!("/api/logs/{id}/shop/ghost")).await;
+    assert_eq!(ghost.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        ghost.json::<Value>().await.unwrap()["error"],
+        "pod shop/ghost not found"
+    );
+    // what is not the name of a workload
+    for bad in ["shop", "shop/web/extra", "shop/%00x"] {
+        assert_eq!(
+            rig.get(&format!("/api/logs/{id}/{bad}")).await.status(),
+            StatusCode::BAD_REQUEST,
+            "{bad}"
+        );
+    }
+    // not logged in
+    assert_eq!(
+        Client::new()
+            .get(rig.url(&format!("/api/logs/{id}/shop/web-1")))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn a_followed_log_stops_at_the_agent_when_the_browser_leaves() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (id, agent) = rig.source_with_logs().await;
+    let mut r = rig
+        .get(&format!("/api/logs/{id}/shop/endless?follow=true"))
+        .await;
+    let mut seen = String::new();
+    while !seen.contains("tick") {
+        seen.push_str(&String::from_utf8_lossy(
+            &tokio::time::timeout(Duration::from_secs(5), r.chunk())
+                .await
+                .expect("no line")
+                .unwrap()
+                .unwrap(),
+        ));
+    }
+    drop(r);
+    eventually("the agent stopped reading", || async {
+        !agent.stopped.lock().unwrap().is_empty()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn who_may_read_which_log_is_a_matter_of_policy() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (id, _) = rig.source_with_logs().await;
+    let (dev, dev_id) = user_client(&rig, "devon").await;
+    let path = |ns: &str, name: &str| format!("/api/logs/{id}/{ns}/{name}");
+    let status = |p: String| {
+        let dev = dev.clone();
+        let url = rig.url(&p);
+        async move { dev.get(url).send().await.unwrap().status() }
+    };
+    assert_eq!(
+        status(path("shop", "web-1")).await,
+        StatusCode::FORBIDDEN,
+        "in no group: nothing"
+    );
+
+    // a policy for this namespace of this source, and a secret pod that stays closed
+    let hcl = format!(
+        "path \"logs/{id}/shop/*\" {{\n capabilities = [\"read\"]\n}}\npath \"logs/{id}/shop/secret-*\" {{\n capabilities = [\"deny\"]\n}}\n"
+    );
+    let made = rig
+        .post("/api/policies", json!({"name": "shop-logs", "hcl": hcl}))
+        .await;
+    let policy = made.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let group = rig
+        .post("/api/groups", json!({"name": "shop-devs"}))
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{group}/policies"),
+        json!({"policies": [policy]}),
+    )
+    .await;
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{group}/members"),
+        json!({"users": [dev_id]}),
+    )
+    .await;
+    assert_eq!(status(path("shop", "web-1")).await, StatusCode::OK);
+    assert_eq!(
+        status(path("shop", "secret-keys")).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status(path("billing", "web-1")).await,
+        StatusCode::FORBIDDEN,
+        "another namespace"
+    );
+    // reading the log does not give the right to anything else
+    assert_eq!(status("/api/users".into()).await, StatusCode::FORBIDDEN);
 }

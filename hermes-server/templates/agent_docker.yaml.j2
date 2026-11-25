@@ -19,6 +19,9 @@ services:
       SOURCE_NAME: "{{ SourceName }}"
       COLLECTOR: docker
       TOKEN: "{{ Token }}"
+{%- if Logs %}
+      LOGS: "1"   # allowed when this source was added: the dashboard's log panel
+{%- endif %}
       # where this machine is (rack, site, region): shown on the map: LOCATION=rack-2 docker compose up -d
       NODE_LOCATION: "${LOCATION:-}"
     volumes:

@@ -18,6 +18,8 @@ pub struct SourceView {
     pub expected_agent: Option<String>,
     /// Some connected agent of this source was installed to change its own image: "Change agent version" works from the dashboard.
     pub can_upgrade: bool,
+    /// Some connected agent of this source was installed to read the logs of its containers.
+    pub can_logs: bool,
     /// The last version change that was asked for, and how it is going.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

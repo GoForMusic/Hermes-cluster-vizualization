@@ -44,6 +44,12 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["nodes", "pods"]
     verbs: ["get", "list"]
+{%- if Logs %}
+  # Allowed when this source was added: the dashboard's log panel. Reading the log of a pod, and nothing else about its content.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+{%- endif %}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -148,6 +154,9 @@ spec:
             - { name: COLLECTOR, value: "kubernetes" }
 {%- if Upgrades %}
             - { name: UPGRADES, value: "1" }
+{%- endif %}
+{%- if Logs %}
+            - { name: LOGS, value: "1" }
 {%- endif %}
             - name: TOKEN
               valueFrom:

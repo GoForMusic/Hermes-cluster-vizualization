@@ -40,11 +40,13 @@ pub(super) async fn list_sources(State(st): State<Shared>, _: Admin) -> Response
                 })
                 .collect();
             let can_upgrade = st.upgrades.can_upgrade(&source.id);
+            let can_logs = st.logs.can_read(&source.id);
             SourceView {
                 source,
                 agents,
                 expected_agent: expected.as_ref().map(ToString::to_string),
                 can_upgrade,
+                can_logs,
                 upgrade,
                 dc: None,
                 dc_name: None,
@@ -227,6 +229,7 @@ pub(super) async fn add_source(State(st): State<Shared>, _: Admin, body: Bytes) 
         pull_secret_data: &images.pull_secret_data,
         flows: req.flows,
         upgrades: req.upgrades,
+        logs: req.logs,
         hub_url,
         source_id: &source.id,
         source_name: &source.name,
@@ -324,6 +327,7 @@ pub(super) async fn remove_source(
     }
     st.guard.remove_source(&id);
     st.upgrades.forget(&id);
+    st.logs.forget(&id);
     if let Err(e) = st.db.sources.delete_source(&id) {
         return internal(e);
     }
