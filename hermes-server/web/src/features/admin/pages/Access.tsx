@@ -8,6 +8,7 @@ import { useClient } from '../../../state/context';
 import { Dialog } from '../../../ui/dialog';
 import { Icon } from '../../../ui/icons';
 import { ListBar, usePaged } from '../../../ui/paging';
+import { Picker } from '../../../ui/picker';
 import { StatusChip } from '../../../ui/status';
 import { errorText, useAsyncSubmit } from '../../../ui/hooks';
 import { useSession } from '../../../app/session';
@@ -200,7 +201,7 @@ function Groups({ users, groups, policies, reload }: GroupLists) {
             <tbody>
               {paged.shown.map((g) => (
                 <tr key={g.id}>
-                  <td><span className="who"><Icon name="group" size={16} /><b>{g.name}</b></span>{g.description ? <div className="muted">{g.description}</div> : null}</td>
+                  <td><span className="who"><Icon name="group" size={16} /><b>{g.name}</b></span>{g.description ? <div className="sub">{g.description}</div> : null}</td>
                   <td>{g.policies.length ? g.policies.map((p) => policyNames.get(p) ?? '?').join(', ') : <span className="muted">none</span>}</td>
                   <td>{g.system ? <span className="muted">every user</span> : g.members.length ? g.members.map((m) => names.get(m) ?? '?').join(', ') : <span className="muted">nobody</span>}</td>
                   <td className="r">
@@ -242,26 +243,31 @@ function EditGroup({ group, users, policies, onClose, onDone }: { group: GroupVi
     await onDone();
     onClose();
   });
-  const toggle = (list: number[], set: (l: number[]) => void, id: number, on: boolean) => set(on ? [...list, id] : list.filter((m) => m !== id));
   return (
     <Dialog open onClose={onClose}>
       <h2>{group ? group.name : 'Add group'}</h2>
       <form className="form" onSubmit={submit}>
         <label className="f">Name<input value={name} disabled={system} onChange={(e) => setName(e.target.value)} autoComplete="off" /></label>
         <label className="f">Description (optional)<input value={description} onChange={(e) => setDescription(e.target.value)} autoComplete="off" /></label>
-        <fieldset className="f">
-          <legend>Policies this group gives</legend>
-          {policies.length ? policies.map((p) => (
-            <label key={p.id} className="check"><input type="checkbox" checked={given.includes(p.id)} onChange={(e) => toggle(given, setGiven, p.id, e.target.checked)} /> {p.name}</label>
-          )) : <span className="muted">No policies yet</span>}
-        </fieldset>
+        <Picker
+          label="Policies"
+          icon={<Icon name="policy" size={13} />}
+          items={policies.map((p) => ({ id: p.id, name: p.name, hint: p.description }))}
+          value={given}
+          onChange={setGiven}
+          placeholder="Search policies to add…"
+          empty="No policies yet: add one in Settings → Policies."
+        />
         {system ? <p className="help">Every user is in this group; there are no members to choose.</p> : (
-          <fieldset className="f">
-            <legend>Members</legend>
-            {users.map((u) => (
-              <label key={u.id} className="check"><input type="checkbox" checked={members.includes(u.id)} onChange={(e) => toggle(members, setMembers, u.id, e.target.checked)} /> {u.username}</label>
-            ))}
-          </fieldset>
+          <Picker
+            label="Members"
+            icon={<Icon name="user" size={13} />}
+            items={users.map((u) => ({ id: u.id, name: u.username, hint: u.email }))}
+            value={members}
+            onChange={setMembers}
+            placeholder="Search users to add…"
+            empty="No users yet."
+          />
         )}
         <div className="err" role="alert">{error}</div>
         <div className="dlg-actions">

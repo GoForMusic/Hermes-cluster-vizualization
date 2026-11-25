@@ -49,7 +49,7 @@ export function PoliciesTab() {
                   <td>
                     <span className="who"><Icon name="policy" size={16} /><b>{p.name}</b></span>{' '}
                     {p.builtin ? <StatusChip status="unknown">Built-in</StatusChip> : null}
-                    {p.description ? <div className="muted">{p.description}</div> : null}
+                    {p.description ? <div className="sub">{p.description}</div> : null}
                   </td>
                   <td>{p.groups.length ? p.groups.map((g) => names.get(g) ?? '?').join(', ') : <span className="muted">no group</span>}</td>
                   <td className="r">

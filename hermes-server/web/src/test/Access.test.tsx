@@ -105,7 +105,9 @@ describe('the access page', () => {
     await user.click(screen.getByRole('button', { name: '+ Add group' }));
     const dialog = screen.getByRole('dialog');
     await user.type(within(dialog).getByLabelText('Name'), 'dev');
-    await user.click(within(dialog).getByLabelText('alice'));
+    await user.click(within(dialog).getByRole('combobox', { name: 'Search members to add' }));
+    await user.click(within(dialog).getByRole('option', { name: /alice/ }));
+    expect(within(dialog).getByRole('button', { name: 'Remove alice' })).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Add group' }));
     await waitFor(() => expect(hub.calls).toContain('access.createGroup:dev'));
     await waitFor(() => expect(hub.calls).toContain('access.setMembers:22:2'));
@@ -176,6 +178,24 @@ describe('groups and policies', () => {
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByLabelText('Name')).toBeDisabled();
     expect(within(dialog).queryByText('alice')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('combobox', { name: 'Search members to add' })).not.toBeInTheDocument();
+  });
+
+  it('finds what to add by typing, and takes it away again with the ×', async () => {
+    const user = userEvent.setup();
+    const { hub } = await renderWithHub(<Settings arg="groups" />, { prepare: (h) => { h.users = [...h.users, alice]; h.groups = [ops]; h.policies = [readOnly, { ...readOnly, id: 31, name: 'source-editor', description: 'edit sources', groups: [] }, { ...readOnly, id: 32, name: 'freeze', description: 'deny prod', groups: [] }]; } });
+    await user.click(within(await screen.findByText('ops').then((e) => e.closest('tr')!)).getByRole('button', { name: 'Edit' }));
+    const dialog = screen.getByRole('dialog');
+    // read-only is already given: it is a chip, not a result
+    expect(within(dialog).getByRole('button', { name: 'Remove read-only' })).toBeInTheDocument();
+    await user.type(within(dialog).getByRole('combobox', { name: 'Search policies to add' }), 'edit');
+    const options = within(dialog).getAllByRole('option');
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent('source-editor');
+    await user.click(options[0]!);
+    await user.click(within(dialog).getByRole('button', { name: 'Remove read-only' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(hub.calls).toContain('access.setGroupPolicies:20:31'));
   });
 
   it('gives a policy to a group', async () => {
@@ -185,7 +205,8 @@ describe('groups and policies', () => {
     const every = rowOf('everyone');
     await user.click(within(every).getByRole('button', { name: 'Edit' }));
     const dialog = screen.getByRole('dialog');
-    await user.click(within(dialog).getByLabelText('read-only'));
+    await user.click(within(dialog).getByRole('combobox', { name: 'Search policies to add' }));
+    await user.click(within(dialog).getByRole('option', { name: /read-only/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(hub.calls).toContain('access.setGroupPolicies:21:30'));
   });
