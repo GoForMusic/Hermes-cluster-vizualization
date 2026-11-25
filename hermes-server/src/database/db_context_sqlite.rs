@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS policies (
 CREATE TABLE IF NOT EXISTS group_policies (group_id INTEGER NOT NULL, policy_id INTEGER NOT NULL, PRIMARY KEY (group_id, policy_id));
 CREATE TABLE IF NOT EXISTS group_members (group_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (group_id, user_id));
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
-CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL,
+  created INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS beats (node_id TEXT NOT NULL, ts INTEGER NOT NULL, status TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_beats ON beats(node_id, ts);
 ";
@@ -164,6 +165,8 @@ impl DBContext_SQLite {
             "ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN break_glass INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE groups ADD COLUMN system INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE sessions ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0",
         ] {
             let _ = conn.execute(column, []);
         }

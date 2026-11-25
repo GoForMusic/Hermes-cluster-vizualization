@@ -893,6 +893,52 @@ async fn the_admin_can_ask_what_a_user_would_be_allowed() {
 }
 
 #[tokio::test]
+async fn the_admin_sets_how_long_a_login_lasts_and_it_shows_in_the_cookie() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let now: Value = rig.get("/api/security").await.json().await.unwrap();
+    assert_eq!(now, json!({"maxHours": 336, "idleMinutes": 0}));
+    let put = |body: Value| rig.send(reqwest::Method::PUT, "/api/security", body);
+    assert_eq!(
+        put(json!({"maxHours": 0, "idleMinutes": 0})).await.status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        put(json!({"maxHours": 8, "idleMinutes": 3})).await.status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        put(json!({"maxHours": 8})).await.status(),
+        StatusCode::BAD_REQUEST,
+        "both are asked for"
+    );
+    assert_eq!(
+        put(json!({"maxHours": 8, "idleMinutes": 30}))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        rig.get("/api/security")
+            .await
+            .json::<Value>()
+            .await
+            .unwrap(),
+        json!({"maxHours": 8, "idleMinutes": 30})
+    );
+    let login = rig
+        .http
+        .post(rig.url("/api/auth/login"))
+        .header("X-Requested-With", "hermes")
+        .json(&json!({"username": "admin", "password": PASSWORD}))
+        .send()
+        .await
+        .unwrap();
+    let cookie = login.headers()["set-cookie"].to_str().unwrap().to_string();
+    assert!(cookie.contains("Max-Age=28800"), "{cookie}");
+}
+
+#[tokio::test]
 async fn the_first_visit_creates_the_admin_and_logs_them_in() {
     let rig = Rig::start().await;
     let status: Value = rig.get("/api/auth/status").await.json().await.unwrap();

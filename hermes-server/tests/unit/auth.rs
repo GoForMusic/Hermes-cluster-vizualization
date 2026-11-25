@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use super::*;
 use crate::database::Repositories;
+use crate::model::SessionPolicy;
 
 const PASSWORD: &str = "correct horse battery";
 
@@ -162,7 +163,7 @@ fn sessions_end_on_logout_and_when_they_expire() {
     );
     auth.logout(&a);
     assert!(auth.authenticate(&a).is_none() && auth.authenticate(&b).is_some());
-    clock.fetch_add(SESSION_TTL_MS + 1, Ordering::SeqCst);
+    clock.fetch_add(SessionPolicy::DEFAULT.max_ms() + 1, Ordering::SeqCst);
     assert!(auth.authenticate(&b).is_none());
 }
 
@@ -214,4 +215,154 @@ fn the_wallboard_is_private_until_the_admin_makes_it_public() {
     assert!(auth.public_view());
     auth.set_public_view(false).unwrap();
     assert!(!auth.public_view());
+}
+
+const MINUTE: i64 = 60_000;
+const HOUR: i64 = 60 * MINUTE;
+
+#[test]
+fn a_login_lasts_fourteen_days_unless_the_admin_says_otherwise() {
+    let (auth, _) = rig();
+    assert_eq!(
+        auth.session_policy(),
+        SessionPolicy {
+            max_hours: 336,
+            idle_minutes: 0
+        }
+    );
+    for bad in [
+        SessionPolicy {
+            max_hours: 0,
+            idle_minutes: 0,
+        },
+        SessionPolicy {
+            max_hours: 721,
+            idle_minutes: 0,
+        },
+        SessionPolicy {
+            max_hours: 8,
+            idle_minutes: 4,
+        },
+        SessionPolicy {
+            max_hours: 8,
+            idle_minutes: 1441,
+        },
+    ] {
+        assert!(
+            matches!(
+                auth.set_session_policy(bad),
+                Err(AuthError::BadSessionPolicy)
+            ),
+            "{bad:?}"
+        );
+    }
+    let ok = SessionPolicy {
+        max_hours: 8,
+        idle_minutes: 30,
+    };
+    auth.set_session_policy(ok).unwrap();
+    assert_eq!(auth.session_policy(), ok);
+}
+
+#[test]
+fn a_login_ends_after_the_longest_time_however_busy_the_person_is() {
+    let (auth, clock) = rig();
+    auth.set_session_policy(SessionPolicy {
+        max_hours: 8,
+        idle_minutes: 0,
+    })
+    .unwrap();
+    let token = auth.setup("admin", PASSWORD, false).unwrap();
+    for _ in 0..7 {
+        clock.fetch_add(HOUR, Ordering::SeqCst);
+        assert!(
+            auth.authenticate(&token).is_some(),
+            "busy, and still inside the 8 hours"
+        );
+    }
+    clock.fetch_add(HOUR + 1, Ordering::SeqCst);
+    assert!(auth.authenticate(&token).is_none());
+    assert!(
+        auth.sessions
+            .session(&hash_token(&token))
+            .unwrap()
+            .is_none(),
+        "and it is gone"
+    );
+}
+
+#[test]
+fn a_login_ends_after_a_while_without_a_request_and_every_request_starts_the_wait_again() {
+    let (auth, clock) = rig();
+    auth.set_session_policy(SessionPolicy {
+        max_hours: 24,
+        idle_minutes: 30,
+    })
+    .unwrap();
+    let token = auth.setup("admin", PASSWORD, false).unwrap();
+    for _ in 0..5 {
+        clock.fetch_add(20 * MINUTE, Ordering::SeqCst);
+        assert!(
+            auth.authenticate(&token).is_some(),
+            "20 minutes since the last request"
+        );
+    }
+    clock.fetch_add(31 * MINUTE, Ordering::SeqCst);
+    assert!(auth.authenticate(&token).is_none(), "31 minutes of nothing");
+}
+
+#[test]
+fn asking_whether_a_login_is_alive_does_not_keep_it_alive() {
+    let (auth, clock) = rig();
+    auth.set_session_policy(SessionPolicy {
+        max_hours: 24,
+        idle_minutes: 30,
+    })
+    .unwrap();
+    let token = auth.setup("admin", PASSWORD, false).unwrap();
+    for _ in 0..4 {
+        clock.fetch_add(10 * MINUTE, Ordering::SeqCst);
+        // what a page with an open stream asks: it is open, but nobody is using it
+        if clock.load(Ordering::SeqCst) < 1_000_000 + 30 * MINUTE {
+            assert!(auth.is_alive(&token));
+        }
+    }
+    assert!(!auth.is_alive(&token), "40 minutes without a real request");
+}
+
+#[test]
+fn a_new_limit_counts_for_the_logins_that_already_exist() {
+    let (auth, clock) = rig();
+    let token = auth.setup("admin", PASSWORD, false).unwrap();
+    clock.fetch_add(3 * HOUR, Ordering::SeqCst);
+    assert!(
+        auth.authenticate(&token).is_some(),
+        "14 days: three hours is nothing"
+    );
+    auth.set_session_policy(SessionPolicy {
+        max_hours: 2,
+        idle_minutes: 0,
+    })
+    .unwrap();
+    assert!(
+        auth.authenticate(&token).is_none(),
+        "now it is older than the longest login"
+    );
+}
+
+#[test]
+fn a_login_from_before_the_hub_kept_when_it_was_made_still_ends_at_its_own_end() {
+    let (auth, clock) = rig();
+    let token = auth.setup("admin", PASSWORD, false).unwrap();
+    let hash = hash_token(&token);
+    let row = auth.sessions.session(&hash).unwrap().unwrap();
+    // the shape an older hub left: no creation time, no last use
+    auth.sessions.delete_session(&hash).unwrap();
+    auth.sessions
+        .create_session(&hash, row.user_id, 0, row.expires)
+        .unwrap();
+    clock.fetch_add(HOUR, Ordering::SeqCst);
+    assert!(auth.authenticate(&token).is_some());
+    clock.store(row.expires + 1, Ordering::SeqCst);
+    assert!(auth.authenticate(&token).is_none());
 }

@@ -17,6 +17,7 @@ import type { PolicyView } from '../generated/PolicyView';
 import type { RegistryInput } from '../generated/RegistryInput';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
+import type { SessionPolicy } from '../generated/SessionPolicy';
 import type { SourceView } from '../generated/SourceView';
 import type { UserView } from '../generated/UserView';
 import type { Alert, Uptime } from '../domain/model';
@@ -35,6 +36,9 @@ export interface IAuthApi {
   logout(): Promise<void>;
   changePassword(current: string, next: string): Promise<void>;
   setPublicView(enabled: boolean): Promise<void>;
+  /** How long a login lasts. */
+  sessionPolicy(): Promise<SessionPolicy>;
+  setSessionPolicy(policy: SessionPolicy): Promise<SessionPolicy>;
 }
 
 export interface ITopologyApi {

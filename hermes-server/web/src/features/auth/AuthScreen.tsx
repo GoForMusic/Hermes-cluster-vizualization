@@ -10,7 +10,7 @@ const Field = ({ label, hint, children }: { label: string; hint?: string; childr
   <label className="f">{label}{children}{hint ? <span className="muted" style={{ fontSize: 11.5 }}>{hint}</span> : null}</label>
 );
 
-export function AuthScreen({ mode, onDone, onMember }: { mode: 'setup' | 'login'; onDone: () => void; onMember?: (code: MemberCode) => void }) {
+export function AuthScreen({ mode, onDone, onMember, expired = false }: { mode: 'setup' | 'login'; onDone: () => void; onMember?: (code: MemberCode) => void; expired?: boolean }) {
   const client = useClient();
   const setup = mode === 'setup';
   const [managed, setManaged] = useState(false); // first run: this hub will be managed by another one, so it gets no admin of its own
@@ -60,6 +60,7 @@ export function AuthScreen({ mode, onDone, onMember }: { mode: 'setup' | 'login'
         <div className="auth-brand"><Brand compact /></div>
         {setup && onMember ? <SetupKind managed={false} onChange={setManaged} /> : null}
         <h1>{setup ? 'Create the admin account' : 'Log in'}</h1>
+        {expired && !setup ? <p className="help" role="status" style={{ marginTop: 0 }}>You were logged out: your login ended. Sign in again to go on.</p> : null}
         {setup ? <p className="help">First start: choose the account that manages sources, alert rules and settings. Only the password hash is stored.</p> : null}
         <div className="form">
           <Field label="Username" hint={setup ? '3–32 characters: letters, digits, . - _' : undefined}>

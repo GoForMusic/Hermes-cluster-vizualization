@@ -166,7 +166,7 @@ fn disabling_and_resetting_a_password_end_the_sessions_of_that_account() {
         ),
     ] {
         r.db.sessions
-            .create_session("tok", bob.id, i64::MAX)
+            .create_session("tok", bob.id, 0, i64::MAX)
             .unwrap();
         r.access.update_user(admin.id, bob.id, changes).unwrap();
         assert!(r.db.sessions.session("tok").unwrap().is_none(), "{what}");
@@ -201,7 +201,7 @@ fn deleting_an_account_takes_its_sessions_and_its_places_in_groups() {
     let team = r.access.create_group("ops", "").unwrap();
     r.access.set_members(team.id, &[bob.id, admin.id]).unwrap();
     r.db.sessions
-        .create_session("tok", bob.id, i64::MAX)
+        .create_session("tok", bob.id, 0, i64::MAX)
         .unwrap();
     r.access.delete_user(admin.id, bob.id).unwrap();
     assert!(r.db.sessions.session("tok").unwrap().is_none());

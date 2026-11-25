@@ -15,13 +15,15 @@ use super::{
 };
 use crate::app::Settings;
 use crate::model::AuthStatus;
-use crate::services::{AuthError, SESSION_TTL_MS};
+use crate::model::SessionPolicy;
+use crate::services::AuthError;
 
 /// `tls_enabled` is the hub's own TLS (`HUB_TLS_CERT`/`HUB_TLS_KEY`); the header covers the other case, a proxy in front that
 /// terminates TLS itself and forwards plain HTTP.
 fn session_cookie(
     headers: &HeaderMap,
     settings: &Settings,
+    max_age_secs: i64,
     token: &str,
 ) -> (HeaderName, HeaderValue) {
     let secure = settings.tls_enabled
@@ -32,7 +34,7 @@ fn session_cookie(
     let value = format!(
         "{COOKIE_NAME}={token}; Path={}; HttpOnly; SameSite=Strict; Max-Age={}{}",
         cookie_path(settings),
-        SESSION_TTL_MS / 1000,
+        max_age_secs,
         if secure { "; Secure" } else { "" }
     );
     (
@@ -53,10 +55,11 @@ fn cookie_path(settings: &Settings) -> &str {
 fn with_cookie(
     headers: &HeaderMap,
     settings: &Settings,
+    max_age_secs: i64,
     token: &str,
     mut response: Response,
 ) -> Response {
-    let (name, value) = session_cookie(headers, settings, token);
+    let (name, value) = session_cookie(headers, settings, max_age_secs, token);
     response.headers_mut().insert(name, value);
     response
 }
@@ -66,7 +69,9 @@ fn auth_error(e: AuthError) -> Response {
         AuthError::BadCredentials => StatusCode::UNAUTHORIZED,
         AuthError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
         AuthError::SetupDone => StatusCode::CONFLICT,
-        AuthError::BadUsername | AuthError::WeakPassword => StatusCode::BAD_REQUEST,
+        AuthError::BadUsername | AuthError::WeakPassword | AuthError::BadSessionPolicy => {
+            StatusCode::BAD_REQUEST
+        }
         AuthError::Internal(ref inner) => return internal(inner),
     };
     fail(code, &e.to_string())
@@ -122,11 +127,12 @@ struct Credentials {
 async fn login_response(
     headers: &HeaderMap,
     settings: &Settings,
+    max_age_secs: i64,
     ok_body: Response,
     work: impl FnOnce() -> Result<String, AuthError> + Send + 'static,
 ) -> Response {
     match blocking(work).await {
-        Ok(Ok(token)) => with_cookie(headers, settings, &token, ok_body),
+        Ok(Ok(token)) => with_cookie(headers, settings, max_age_secs, &token, ok_body),
         Ok(Err(e)) => auth_error(e),
         Err(r) => r,
     }
@@ -149,9 +155,13 @@ pub(super) async fn auth_setup(
     };
     let auth = st.auth.clone();
     let ok_body = json_response(StatusCode::CREATED, json!({"ok": true}));
-    login_response(&headers, &st.settings, ok_body, move || {
-        auth.setup(&c.username, &c.password, c.public_view)
-    })
+    login_response(
+        &headers,
+        &st.settings,
+        st.auth.session_policy().max_ms() / 1000,
+        ok_body,
+        move || auth.setup(&c.username, &c.password, c.public_view),
+    )
     .await
 }
 
@@ -172,9 +182,13 @@ pub(super) async fn auth_login(
         Err(r) => return r,
     };
     let (auth, ip) = (st.auth.clone(), peer.ip().to_string());
-    login_response(&headers, &st.settings, ok(), move || {
-        auth.login(&c.username, &c.password, &ip)
-    })
+    login_response(
+        &headers,
+        &st.settings,
+        st.auth.session_policy().max_ms() / 1000,
+        ok(),
+        move || auth.login(&c.username, &c.password, &ip),
+    )
     .await
 }
 
@@ -214,9 +228,13 @@ pub(super) async fn auth_password(
         Err(r) => return r,
     };
     let auth = st.auth.clone();
-    login_response(&headers, &st.settings, ok(), move || {
-        auth.change_password(user.id, &change.current, &change.next)
-    })
+    login_response(
+        &headers,
+        &st.settings,
+        st.auth.session_policy().max_ms() / 1000,
+        ok(),
+        move || auth.change_password(user.id, &change.current, &change.next),
+    )
     .await
 }
 
@@ -232,5 +250,22 @@ pub(super) async fn auth_public_view(State(st): State<Shared>, _: Admin, body: B
             .set_public_view(b.enabled)
             .map_or_else(auth_error, |()| ok()),
         Err(r) => r,
+    }
+}
+
+/// `GET /api/security`.
+pub(super) async fn get_security(State(st): State<Shared>, _: Admin) -> Response {
+    json_response(StatusCode::OK, st.auth.session_policy())
+}
+
+/// `PUT /api/security`: how long a login lasts. It counts for the logins that exist as well: the next request of each is judged by it.
+pub(super) async fn put_security(State(st): State<Shared>, _: Admin, body: Bytes) -> Response {
+    let policy: SessionPolicy = match parse(&body) {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    match st.auth.set_session_policy(policy) {
+        Ok(()) => json_response(StatusCode::OK, policy),
+        Err(e) => auth_error(e),
     }
 }

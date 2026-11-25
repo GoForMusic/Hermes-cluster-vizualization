@@ -12,6 +12,7 @@ import type { PolicyView } from '../generated/PolicyView';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
 import type { GroupView } from '../generated/GroupView';
+import type { SessionPolicy } from '../generated/SessionPolicy';
 import type { SourceView } from '../generated/SourceView';
 import type { UserView } from '../generated/UserView';
 import { wireEdge, wireNode } from './fixtures';
@@ -41,6 +42,8 @@ export interface FakeHub {
   federation: FederationView;
   /** the accounts and groups the fake hub holds */
   users: UserView[];
+  /** how long a login lasts, as the fake hub holds it */
+  sessionPolicy: SessionPolicy;
   groups: GroupView[];
   policies: PolicyView[];
   /** what "Test access" answers */
@@ -66,6 +69,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     registryTest: { ok: true, message: 'connected', versions: ['1.0.1', '1.0.0'] },
     federation: { name: 'dc1', member: null, datacenters: [] },
     users: [{ id: 1, username: 'admin', email: '', role: 'admin', disabled: false, breakGlass: true, created: 1, groups: [] }],
+    sessionPolicy: { maxHours: 336, idleMinutes: 0 },
     groups: [],
     policies: [],
     check: { allowed: true, reason: 'allowed by read-only' },
@@ -83,6 +87,8 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
       logout: async () => note('auth.logout'),
       changePassword: async (current, next) => note(`auth.changePassword:${current}:${next}`),
       setPublicView: async (on) => note(`auth.publicView:${on}`),
+      sessionPolicy: async () => hub.sessionPolicy,
+      setSessionPolicy: async (p) => { note(`auth.sessionPolicy:${p.maxHours}:${p.idleMinutes}`); if (hub.accessError) throw new Error(hub.accessError); hub.sessionPolicy = p; return p; },
     },
     topology: {
       snapshot: async () => { note('snapshot'); return hub.data; },

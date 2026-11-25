@@ -97,6 +97,10 @@ pub fn routes(state: Shared) -> Router {
             get(registry_controller::registry_versions),
         )
         .route(
+            "/api/security",
+            get(auth_controller::get_security).put(auth_controller::put_security),
+        )
+        .route(
             "/api/comm-log",
             get(comm_log_controller::list_log)
                 .put(comm_log_controller::switch_log)

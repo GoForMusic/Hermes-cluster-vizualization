@@ -52,6 +52,8 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       logout: () => send('POST', '/api/auth/logout'),
       changePassword: (current, next) => send('POST', '/api/auth/password', { current, next }),
       setPublicView: (enabled) => send('PUT', '/api/auth/public-view', { enabled }),
+      sessionPolicy: () => get('/api/security'),
+      setSessionPolicy: (policy) => call('PUT', '/api/security', policy),
     },
     topology: {
       snapshot: () => get('/api/snapshot'),

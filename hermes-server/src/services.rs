@@ -19,7 +19,7 @@ mod store_imp;
 mod upgrade_service_imp;
 
 pub use access_imp::{AccessError, AccessImp, IAccess, UserChanges};
-pub use auth_imp::{AuthError, AuthImp, IAuth, SESSION_TTL_MS};
+pub use auth_imp::{AuthError, AuthImp, IAuth};
 pub use authz_imp::{AuthzImp, IAuthz};
 pub use comm_log_imp::{CommLogImp, ICommLog, LogItem, NewEntry, SharedCommLog, describe_batch};
 pub use engine_imp::{EngineImp, IEngine};
