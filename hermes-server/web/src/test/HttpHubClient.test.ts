@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HubError } from '../hub/HubClient';
 import { createHttpHubClient } from '../hub/HttpHubClient';
 
@@ -66,5 +66,29 @@ describe('the HTTP client', () => {
     expect(seen).toEqual(['open', 'sources', 'error:false', 'error:true']);
     expect(es.closed).toBe(true);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('under a base path (HUB_BASE_PATH)', () => {
+  afterEach(() => {
+    delete window.__HUB_BASE__;
+    vi.resetModules();
+  });
+
+  it('puts the path in front of every call and of the event stream', async () => {
+    window.__HUB_BASE__ = '/hermes';
+    vi.resetModules();
+    const { createHttpHubClient } = await import('../hub/HttpHubClient');
+    const { hubAddress } = await import('../hub/base');
+    const urls: string[] = [];
+    const client = createHttpHubClient({
+      fetch: (async (url: string) => { urls.push(url); return new Response('{}'); }) as unknown as typeof fetch,
+      eventSource: ((url: string) => { urls.push(url); return { close() {} } as EventSource; }),
+    });
+    await client.auth.status();
+    await client.alerts.ack(7);
+    client.feed.connect({ onEvent() {}, onOpen() {}, onError() {} })();
+    expect(urls).toEqual(['/hermes/api/auth/status', '/hermes/api/alerts/7/ack', '/hermes/api/stream']);
+    expect(hubAddress()).toBe(location.origin + '/hermes');
   });
 });

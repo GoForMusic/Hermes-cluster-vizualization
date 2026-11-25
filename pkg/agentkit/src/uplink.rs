@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use hermes_proto::PROTOCOL;
+use hermes_proto::prefix::{PathPrefix, split_address};
 use hermes_proto::v1::agent_service_client::AgentServiceClient;
 use hermes_proto::v1::{
     AgentMessage, Batch, CollectorState, Edge, Flow, Hello, Node, Own, Upgrade, UpgradeState,
@@ -113,12 +114,14 @@ impl Uplink {
     }
 
     async fn session(&self) -> Result<()> {
+        let (_, prefix) = split_address(&self.cfg.hub_url);
         let channel = self
             .endpoint()?
             .connect()
             .await
             .context("cannot reach the hub")?;
-        let mut client = AgentServiceClient::new(channel);
+        // a hub behind a proxy at a sub-path (`HUB_URL=https://host/hermes`): the path goes in front of every call
+        let mut client = AgentServiceClient::new(PathPrefix::new(channel, prefix));
 
         let (tx, rx) = mpsc::channel::<AgentMessage>(8);
         let hello = Hello {
@@ -209,7 +212,8 @@ impl Uplink {
     }
 
     fn endpoint(&self) -> Result<Endpoint> {
-        let mut endpoint = Endpoint::from_shared(self.cfg.hub_url.clone())
+        let (origin, _) = split_address(&self.cfg.hub_url);
+        let mut endpoint = Endpoint::from_shared(origin)
             .with_context(|| format!("HUB_URL {} is not a valid address", self.cfg.hub_url))?
             .connect_timeout(Duration::from_secs(10))
             .tcp_nodelay(true)

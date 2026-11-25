@@ -1,11 +1,12 @@
 import { useHubState } from '../../state/context';
+import { withBase } from '../../hub/base';
 
 export function Landing() {
   const version = useHubState((s) => s.info.version);
   return (
     <div className="landing">
       <div>
-        <h1 className="landing-logo"><img src="/assets/hermes-banner-transparent.png" alt="HERMES: messenger of the cluster" /></h1>
+        <h1 className="landing-logo"><img src={withBase('/assets/hermes-banner-transparent.png')} alt="HERMES: messenger of the cluster" /></h1>
         <p>A live map of your Kubernetes clusters, Docker Swarm clusters and Docker machines: what runs where, what is using what, and what just broke.</p>
       </div>
       <div className="landing-cards">

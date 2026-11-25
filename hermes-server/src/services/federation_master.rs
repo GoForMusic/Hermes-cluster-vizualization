@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use hermes_proto::FEDERATION_PROTOCOL;
+use hermes_proto::prefix::{PathPrefix, split_address};
 use hermes_proto::v1::federation_service_client::FederationServiceClient;
 use hermes_proto::v1::{
     MasterHello, MasterMessage, MemberHello, Release, Request as LinkRequest, SetLog,
@@ -473,8 +474,10 @@ impl MasterLinks {
         }
     }
 
-    async fn channel(&self, address: &str) -> Result<Channel, String> {
-        let mut endpoint = Endpoint::from_shared(address.to_string())
+    /// A child hub behind a proxy at a sub-path (`https://host/hermes`) is reached with the path in front of every call.
+    async fn channel(&self, address: &str) -> Result<PathPrefix<Channel>, String> {
+        let (origin, prefix) = split_address(address);
+        let mut endpoint = Endpoint::from_shared(origin)
             .map_err(|e| format!("not an address: {e}"))?
             .connect_timeout(Duration::from_secs(10))
             .tcp_nodelay(true)
@@ -488,10 +491,11 @@ impl MasterLinks {
             }
             endpoint = endpoint.tls_config(tls).map_err(|e| e.to_string())?;
         }
-        endpoint
+        let channel = endpoint
             .connect()
             .await
-            .map_err(|e| format!("cannot reach {address}: {}", error_chain(&e)))
+            .map_err(|e| format!("cannot reach {address}: {}", error_chain(&e)))?;
+        Ok(PathPrefix::new(channel, prefix))
     }
 
     /// Keeps the link up for as long as the datacenter is set up: dials, mirrors, and dials again with a back-off when it drops.

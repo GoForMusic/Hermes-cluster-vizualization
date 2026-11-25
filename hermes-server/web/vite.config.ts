@@ -6,6 +6,8 @@ import { defineConfig } from 'vite';
 const hub = process.env.HUB_URL ?? 'http://localhost:8080';
 
 export default defineConfig({
+  // relative URLs in the build: the hub says where it is mounted (HUB_BASE_PATH) with a <base> tag in index.html
+  base: './',
   plugins: [react()],
   server: { proxy: { '/api': { target: hub, changeOrigin: false } } },
   build: { outDir: 'dist', sourcemap: false },

@@ -1,6 +1,7 @@
 // IHubClient over HTTP (JSON) and Server-Sent Events.
 import type { HubEvent } from '../generated/HubEvent';
 import type { IEventFeed, FeedHandlers, IHubClient } from './HubClient';
+import { withBase } from './base';
 import { HubError } from './HubClient';
 
 type Fetch = typeof fetch;
@@ -24,7 +25,7 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
   const onAuth = options.onAuthRequired ?? (() => {});
 
   async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
-    const res = await doFetch(url, {
+    const res = await doFetch(withBase(url), {
       method,
       cache: 'no-store',
       headers: { ...CSRF, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
@@ -107,7 +108,7 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
 function sseFeed(create: EventSourceFactory): IEventFeed {
   return {
     connect(handlers: FeedHandlers) {
-      const es = create('/api/stream');
+      const es = create(withBase('/api/stream'));
       es.onmessage = (e: MessageEvent<string>) => handlers.onEvent(JSON.parse(e.data) as HubEvent);
       es.onopen = () => handlers.onOpen();
       es.onerror = () => handlers.onError(es.readyState === EventSource.CLOSED);

@@ -51,6 +51,14 @@ Because the browser cannot speak gRPC, the hub also serves REST and Server-Sent 
 startup; nothing else in the hub knows which one is in use (`AppState.settings.tls_enabled` only affects whether the session cookie sets `Secure`
 without relying on an `X-Forwarded-Proto` header from a proxy that is not there).
 
+### Under a sub-path
+
+`HUB_BASE_PATH=/hermes` mounts everything (web app, REST, SSE, the agents' gRPC) under that path, for a proxy that routes `host/hermes` to the hub and
+does **not** strip the prefix. Empty (the default) is the root, exactly as before. The web build has relative URLs and the hub puts the path into
+`index.html` (`<base href>` and `window.__HUB_BASE__`), so one image serves under any path; the session cookie gets `Path=/hermes`. Agents and child hubs
+are told the address with the path (`HUB_URL=https://host/hermes`): tonic drops the path of an address, so `hermes_proto::prefix::PathPrefix` puts it back in
+front of every call. Health checks are then at `/hermes/api/health`.
+
 ## Networks
 
 A `network` node is a way to reach workloads: a Docker overlay/macvlan network, or in Kubernetes a Service, an Ingress, a load balancer, and "outside" (`meta.netKind` says which). The Kubernetes collector reads Services, EndpointSlices and Ingresses (best effort: an agent whose account cannot list them draws everything else) and joins outside → Ingress → Service → pods. It belongs to the cluster, not to a host, and is joined to what is on it by `route` edges: a path exists, with no measured rate (the API does not tell who sent what; that is the flow agent, see TODO). The Swarm collector draws the networks you defined (swarm scope, not the routing mesh, with at least one task on them); `bridge`, `host`, `none` and `docker_gwbridge` are per-node plumbing and are left out.

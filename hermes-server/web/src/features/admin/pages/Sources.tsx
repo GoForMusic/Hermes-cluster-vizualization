@@ -9,6 +9,7 @@ import { StatusChip } from '../../../ui/status';
 import { errorText, useAsyncSubmit } from '../../../ui/hooks';
 import { useFederation } from '../../federation/useFederation';
 import { PageHead } from '../PageHead';
+import { hubAddress } from '../../../hub/base';
 
 const STATE_CHIP: Record<string, () => ReactElement> = {
   connected: () => <StatusChip status="ok">Connected</StatusChip>,
@@ -204,7 +205,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
   const types = useHubState((s) => s.info.sourceTypes);
   const [name, setName] = useState('');
   const [type, setType] = useState('');
-  const [hubUrl, setHubUrl] = useState(location.origin);
+  const [hubUrl, setHubUrl] = useState(hubAddress());
   const [flows, setFlows] = useState(false);
   const [windows, setWindows] = useState(false);
   const [upgrades, setUpgrades] = useState(true);
@@ -234,7 +235,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
           <label className="f">Name<input type="text" placeholder="e.g. lab-k3s" value={name} onChange={(e) => setName(e.target.value)} /></label>
           {view.datacenters.length ? (
             <label className="f">Hosted by
-              <select value={dc} onChange={(e) => { const id = e.target.value; setDc(id); setVersion(''); setHubUrl(view.datacenters.find((d) => d.id === id)?.agentAddress || location.origin); }}>
+              <select value={dc} onChange={(e) => { const id = e.target.value; setDc(id); setVersion(''); setHubUrl(view.datacenters.find((d) => d.id === id)?.agentAddress || hubAddress()); }}>
                 <option value="">{view.name || 'this hub'} (this hub)</option>
                 {view.datacenters.map((d) => <option key={d.id} value={d.id} disabled={d.state !== 'connected'}>{d.name}{d.state === 'connected' ? '' : ` (${d.state})`}</option>)}
               </select>

@@ -1006,6 +1006,7 @@ dependencies = [
 name = "hermes-proto"
 version = "1.0.3"
 dependencies = [
+ "http",
  "prost",
  "prost-types",
  "serde_json",
@@ -1014,6 +1015,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tower-service",
 ]
 
 [[package]]

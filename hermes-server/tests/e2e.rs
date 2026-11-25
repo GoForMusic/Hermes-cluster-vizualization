@@ -30,6 +30,15 @@ impl Rig {
     /// `tls_enabled` only changes whether the session cookie gets `Secure` — this rig still listens in plain HTTP either way
     /// (a real TLS listener is covered by `hub_tls.rs`), it is just telling the hub it is behind one.
     async fn start_tls(tls_enabled: bool) -> Self {
+        Self::start_with(tls_enabled, "").await
+    }
+
+    /// A hub mounted under `base_path` (`HUB_BASE_PATH`): `rig.url(..)` already includes it, `rig.addr` does not.
+    async fn start_at(base_path: &str) -> Self {
+        Self::start_with(false, base_path).await
+    }
+
+    async fn start_with(tls_enabled: bool, base_path: &str) -> Self {
         let web = tempfile::tempdir().unwrap();
         std::fs::write(web.path().join("index.html"), "<h1>infraviz</h1>").unwrap();
         std::fs::write(web.path().join("app.js"), "export {}").unwrap();
@@ -38,6 +47,7 @@ impl Rig {
             Repositories::sqlite_in_memory().unwrap(),
             Settings {
                 web: web.path().into(),
+                base_path: base_path.into(),
                 agent_image: "registry.example.com/agent:1.2.3".into(),
                 agent_image_windows: String::new(),
                 agent_pull_secret: String::new(),
@@ -62,7 +72,7 @@ impl Rig {
             .build()
             .unwrap();
         Self {
-            base: format!("http://{addr}"),
+            base: format!("http://{addr}{base_path}"),
             addr,
             http,
             _web: web,
@@ -195,7 +205,11 @@ async fn serves_the_web_app_and_never_lets_it_be_cached() {
         ),
         (StatusCode::OK, "no-store")
     );
-    assert_eq!(index.text().await.unwrap(), "<h1>infraviz</h1>");
+    // the page is the build's `index.html` with the (here empty) base path put in
+    assert_eq!(
+        index.text().await.unwrap(),
+        "<base href=\"/\"><script>window.__HUB_BASE__=\"\"</script><h1>infraviz</h1>"
+    );
     let js = rig.get("/app.js").await;
     assert!(
         js.headers()["content-type"]
@@ -214,6 +228,78 @@ async fn serves_the_web_app_and_never_lets_it_be_cached() {
         rig.get("/api/health").await.json::<Value>().await.unwrap(),
         json!({"ok": true, "version": hermes_hub::version::VERSION})
     );
+}
+
+#[tokio::test]
+async fn under_a_base_path_the_hub_answers_only_there() {
+    let rig = Rig::start_at("/hermes").await;
+    for page in ["/", "/index.html"] {
+        let html = rig.get(page).await.text().await.unwrap();
+        assert!(
+            html.contains(
+                "<base href=\"/hermes/\"><script>window.__HUB_BASE__=\"/hermes\"</script>"
+            ),
+            "{page}: {html}"
+        );
+    }
+    assert_eq!(rig.get("/app.js").await.status(), StatusCode::OK);
+    assert_eq!(
+        rig.get("/api/health").await.status(),
+        StatusCode::OK,
+        "the API is under the prefix too"
+    );
+    // without the prefix there is nothing: the proxy only sends /hermes, and anything else is not this hub's
+    let outside = |path: &str| format!("http://{}{path}", rig.addr);
+    for path in ["/", "/app.js", "/api/health"] {
+        let r = rig.http.get(outside(path)).send().await.unwrap();
+        assert_eq!(r.status(), StatusCode::NOT_FOUND, "{path}");
+    }
+    // `/hermes` without the slash is the same page (a <base> with an absolute href does not care)
+    let bare = rig.http.get(outside("/hermes")).send().await.unwrap();
+    assert_eq!(bare.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn under_a_base_path_the_session_cookie_belongs_to_that_path() {
+    let rig = Rig::start_at("/hermes").await;
+    let r = rig
+        .post(
+            "/api/auth/setup",
+            json!({"username": "admin", "password": PASSWORD}),
+        )
+        .await;
+    assert_eq!(r.status(), StatusCode::CREATED);
+    assert!(
+        r.headers()["set-cookie"]
+            .to_str()
+            .unwrap()
+            .contains("; Path=/hermes;"),
+        "{:?}",
+        r.headers()
+    );
+    // the cookie works for the API under the prefix, and logging out clears it on the same path
+    assert_eq!(rig.get("/api/sources").await.status(), StatusCode::OK);
+    let out = rig.post("/api/auth/logout", json!({})).await;
+    assert!(
+        out.headers()["set-cookie"]
+            .to_str()
+            .unwrap()
+            .contains("Path=/hermes;")
+    );
+}
+
+#[tokio::test]
+async fn an_agent_reaches_a_hub_under_a_base_path_with_the_path_in_its_hub_url() {
+    let rig = Rig::start_at("/hermes").await;
+    rig.setup_admin(false).await;
+    let (id, token) = rig.add_source("Docker Swarm (agent)").await;
+    let agent = rig.agent(&id, &token); // HUB_URL = http://127.0.0.1:port/hermes
+    agent.set_topology(vec![cluster(&id)], vec![]);
+    tokio::spawn(agent.clone().run());
+    eventually("the source is connected", || async {
+        rig.get("/api/sources").await.json::<Value>().await.unwrap()[0]["state"] == "connected"
+    })
+    .await;
 }
 
 #[tokio::test]
