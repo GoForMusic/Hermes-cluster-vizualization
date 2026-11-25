@@ -5,6 +5,8 @@ site_author = "GoForMusic"
 site_url = "https://goformusic.github.io/Hermes-cluster-vizualization/"
 repo_url = "https://github.com/GoForMusic/Hermes-cluster-vizualization"
 repo_name = "GoForMusic/Hermes-cluster-vizualization"
+# The edit button of each page: GitHub forks the repo and opens a pull request for people without write access.
+edit_uri = "edit/main/docs/content/"
 docs_dir = "content"
 site_dir = "site"
 copyright = "Copyright &copy; GoForMusic"
@@ -71,6 +73,8 @@ features = [
   "navigation.tabs",
   "navigation.top",
   "navigation.footer",
+  "content.action.edit",
+  "content.action.view",
   "content.code.copy",
   "content.tabs.link",
   "search.highlight",
@@ -92,3 +96,7 @@ alternate_style = true
 [project.markdown_extensions.tables]
 [project.markdown_extensions.toc]
 permalink = true
+# Turns :material-...: shortcodes into inline SVG icons.
+[project.markdown_extensions.pymdownx.emoji]
+emoji_index = "zensical.extensions.emoji.twemoji"
+emoji_generator = "zensical.extensions.emoji.to_svg"
