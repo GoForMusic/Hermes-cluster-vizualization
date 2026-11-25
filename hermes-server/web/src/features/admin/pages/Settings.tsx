@@ -24,7 +24,7 @@ const Row = ({ title, desc, children }: { title: string; desc: string; children:
 
 /** `needs`: what the person has to be allowed to read for the section to be offered (they would only get refusals). */
 const SECTIONS = [
-  { id: 'general', label: 'General', needs: '' },
+  { id: 'general', label: 'General', needs: 'settings' },
   { id: 'users', label: 'Users', needs: 'users' },
   { id: 'groups', label: 'Groups', needs: 'groups' },
   { id: 'policies', label: 'Policies', needs: 'policies' },
@@ -37,7 +37,7 @@ const SECTIONS = [
 export function Settings({ arg = '' }: { arg?: string }) {
   const { auth } = useSession();
   const offered = SECTIONS.filter((s) => !s.needs || can(auth.grants, 'read', s.needs));
-  const section = offered.find((s) => s.id === arg)?.id ?? 'general';
+  const section = offered.find((s) => s.id === arg)?.id ?? offered[0]?.id ?? 'profile';
   return (
     <>
       <PageHead title="Settings">

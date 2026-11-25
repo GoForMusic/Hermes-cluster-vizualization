@@ -86,6 +86,22 @@ Single sign-on with an identity provider (OpenID Connect) is in [sso.md](sso.md)
 
 Reading the logs of containers through the agents is in [logs.md](logs.md).
 
+### A team that sees only its own cluster
+
+The map, the alerts, the uptime and the list of sources are filtered by **`clusters/<source id>`**: a person sees the clusters they may `read` there, and nothing
+of the others (not in the snapshot, not in the live stream, not in the alerts). `clusters/*` is all of them, a `deny` on one takes it away from a group that may read
+the rest. A node, an edge or an alert belongs to the source its id starts with. The public wallboard and a master hub's own link see everything, as before. Where a
+source is reached from (its endpoint) is shown only to who may read `sources`.
+
+```hcl
+# policy "perception": the cluster of one team, read-only
+path "clusters/<source id of the cluster>" { capabilities = ["read"] }
+```
+
+Put the team's group in that policy and leave **everyone** without any: what is not given is refused, so there is no need for a `deny` (and a `deny` on everyone
+would win over what the team is given). The page offers only what the person may read: a team member has Dashboard, Topology, Alerts and their own Profile; Sources,
+Alert rules, Logs and the other settings need a rule for `sources`, `settings` and `comm-log`. Reading the log of a pod is a separate right (`logs/<source id>/...`).
+
 ### How long a login lasts
 
 Settings → Security (`GET/PUT /api/security`, stored in `settings` as `auth.session_policy`): **log out after** N hours (1 to 720, 336 = 14 days by default) however busy the

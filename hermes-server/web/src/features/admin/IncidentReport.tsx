@@ -1,6 +1,8 @@
 // The incident report: what happened, where, from when to when, who noticed, what the node looked like when it opened and what else was
 // down meanwhile. Opened from any alert; "Copy as Markdown" is what goes in the ticket.
 import { useState } from 'react';
+import { useSession } from '../../app/session';
+import { can } from '../../domain/access';
 import { fmtDur } from '../../domain/format';
 import { incidentFacts, incidentMarkdown, snapshotContainers, snapshotFacts } from '../../domain/incidents';
 import type { Alert } from '../../domain/model';
@@ -13,6 +15,7 @@ const when = (ts: number): string => new Date(ts).toLocaleString('en-GB', { hour
 export function IncidentReport({ alert, onClose, onOpen }: { alert: Alert | null; onClose: () => void; onOpen: (a: Alert) => void }) {
   const state = useWholeState();
   const store = useStore();
+  const { auth } = useSession();
   const [copied, setCopied] = useState(false);
   // the alert in the list may have changed since it was clicked (acknowledged, resolved): show the newest
   const a = alert ? state.alerts.find((x) => x.id === alert.id) ?? alert : null;
@@ -33,7 +36,7 @@ export function IncidentReport({ alert, onClose, onOpen }: { alert: Alert | null
             <dt>Where</dt><dd>{f.path.join(' › ')}{f.gone ? <span className="muted"> · no longer in the topology</span> : null}</dd>
             <dt>Started</dt><dd>{when(a.ts)}</dd>
             <dt>{f.active ? 'Open for' : 'Resolved'}</dt><dd>{f.active ? `${fmtDur(f.duration)} so far` : `${when(a.resolvedTs!)} · lasted ${fmtDur(f.duration)}`}</dd>
-            <dt>Acknowledged</dt><dd>{a.ack ? `${a.ackBy || 'someone'}${a.ackTs ? `, ${when(a.ackTs)}` : ''}` : <>no {f.active ? <button className="btn xs" style={{ marginLeft: 8 }} onClick={() => void store.ackAlert(a.id)}>Acknowledge</button> : null}</>}</dd>
+            <dt>Acknowledged</dt><dd>{a.ack ? `${a.ackBy || 'someone'}${a.ackTs ? `, ${when(a.ackTs)}` : ''}` : <>no {f.active && can(auth.grants, 'create', `alerts/${a.id}/ack`) ? <button className="btn xs" style={{ marginLeft: 8 }} onClick={() => void store.ackAlert(a.id)}>Acknowledge</button> : null}</>}</dd>
           </dl>
           {a.detail ? <><h3>What the hub saw</h3><p className="report-detail">{a.detail}</p></> : null}
           {facts.length || containers.length ? (

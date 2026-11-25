@@ -2182,3 +2182,366 @@ async fn an_alert_on_a_pod_keeps_the_last_lines_of_its_log_for_the_incident_repo
             .all(|q| q.name == "web-1" && q.namespace == "shop")
     );
 }
+
+// ---- teams that each see their own cluster -----------------------------------------------------------------------
+
+/// Two clusters, each with a pod in trouble (so each has an alert); returns the ids and the agents that keep them up.
+async fn two_clusters(rig: &Rig) -> ((String, Uplink), (String, Uplink)) {
+    let mut out = Vec::new();
+    for name in ["perception", "autonomy"] {
+        let (id, token) = rig.add_source_named("Kubernetes (agent)", name).await;
+        let agent = rig.agent(&id, &token);
+        let mut nodes = vec![cluster(&id)];
+        nodes.extend(crashing_pod(&id));
+        agent.set_topology(nodes, vec![]);
+        tokio::spawn(agent.clone().run());
+        out.push((id, agent));
+    }
+    let b = out.pop().unwrap();
+    let a = out.pop().unwrap();
+    eventually("both clusters report an alert", || async {
+        rig.get("/api/alerts")
+            .await
+            .json::<Value>()
+            .await
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len()
+            >= 2
+    })
+    .await;
+    (a, b)
+}
+
+/// A group with a policy, and the user in it.
+async fn team(rig: &Rig, group: &str, user: i64, hcl: &str) {
+    let policy = rig
+        .post("/api/policies", json!({"name": group, "hcl": hcl}))
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let g = rig
+        .post("/api/groups", json!({"name": group}))
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{g}/policies"),
+        json!({"policies": [policy]}),
+    )
+    .await;
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{g}/members"),
+        json!({"users": [user]}),
+    )
+    .await;
+}
+
+fn source_ids(nodes: &Value) -> Vec<String> {
+    let mut ids: Vec<String> = nodes
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| {
+            n["id"]
+                .as_str()
+                .unwrap()
+                .split(':')
+                .next()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+#[tokio::test]
+async fn each_team_sees_its_own_cluster_and_nothing_of_the_other() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    let (test2, id2) = user_client(&rig, "testtwo").await;
+    // nobody has a policy yet: in `everyone`, which gives nothing
+    for client in [&test1, &test2] {
+        assert_eq!(
+            client
+                .get(rig.url("/api/snapshot"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    team(
+        &rig,
+        "team-autonomy",
+        id2,
+        &format!("path \"clusters/{b}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+
+    let json = |c: &Client, path: &str| {
+        let (c, url) = (c.clone(), rig.url(path));
+        async move {
+            c.get(url)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+    for (client, mine, other) in [(&test1, &a, &b), (&test2, &b, &a)] {
+        // the map: only the cluster of the team, with its host and pods
+        let snap = json(client, "/api/snapshot").await;
+        assert_eq!(source_ids(&snap["nodes"]), std::slice::from_ref(mine));
+        assert_eq!(
+            snap["nodes"].as_array().unwrap().len(),
+            4,
+            "the cluster, its host and its two pods"
+        );
+        assert!(
+            !snap.to_string().contains(other.as_str()),
+            "nothing of the other cluster"
+        );
+        // the sources, the alerts and the uptime
+        let sources = json(client, "/api/sources").await;
+        assert_eq!(
+            sources
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            [mine.as_str()]
+        );
+        assert_eq!(
+            sources[0]["endpoint"], "",
+            "where it is reached from is for who may read the sources"
+        );
+        let alerts = json(client, "/api/alerts").await;
+        assert!(!alerts.as_array().unwrap().is_empty());
+        assert!(alerts.as_array().unwrap().iter().all(|x| {
+            x["nodeId"]
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("{mine}:"))
+        }));
+        let uptime = json(client, "/api/uptime?span=3600&buckets=10").await;
+        assert!(
+            uptime
+                .as_object()
+                .unwrap()
+                .keys()
+                .all(|k| k.starts_with(&format!("{mine}:"))),
+            "{uptime}"
+        );
+        // what is shared by the wallboard is theirs to read
+        assert_eq!(
+            client
+                .get(rig.url("/api/settings"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        // and nothing else
+        for forbidden in [
+            "/api/users",
+            "/api/groups",
+            "/api/policies",
+            "/api/comm-log",
+            "/api/identity-providers",
+            "/api/security",
+            "/api/registry",
+        ] {
+            assert_eq!(
+                client
+                    .get(rig.url(forbidden))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::FORBIDDEN,
+                "{forbidden}"
+            );
+        }
+        assert_eq!(
+            status_of(&rig, client, reqwest::Method::POST, "/api/sources").await,
+            StatusCode::FORBIDDEN,
+            "read-only"
+        );
+        // the log of a pod is a separate right
+        assert_eq!(
+            client
+                .get(rig.url(&format!("/api/logs/{mine}/shop/web-1")))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    // the admin (break-glass) sees both
+    let snap = json(&rig.http, "/api/snapshot").await;
+    assert_eq!(source_ids(&snap["nodes"]), {
+        let mut v = vec![a.clone(), b.clone()];
+        v.sort();
+        v
+    });
+}
+
+#[tokio::test]
+async fn the_stream_of_a_team_carries_only_the_events_of_its_cluster() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (b, agent_b)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+
+    let mut mine = test1.get(rig.url("/api/stream")).send().await.unwrap();
+    let mut all = rig.get("/api/stream").await;
+    let first = String::from_utf8_lossy(&mine.chunk().await.unwrap().unwrap()).to_string();
+    assert!(
+        first.contains(&format!("{a}:")) && !first.contains(&format!("{b}:")),
+        "the first snapshot is theirs only: {first}"
+    );
+    // something happens in the other cluster, and then in theirs
+    agent_b.status(&format!("{b}:p:fine-1"), Own::Warn, "OTHER-CLUSTER-EVENT");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let mut seen_all = String::new();
+    while let Ok(Ok(Some(chunk))) =
+        tokio::time::timeout(Duration::from_millis(500), all.chunk()).await
+    {
+        seen_all.push_str(&String::from_utf8_lossy(&chunk));
+    }
+    assert!(
+        seen_all.contains("OTHER-CLUSTER-EVENT"),
+        "the admin's stream has it"
+    );
+    let mut seen_mine = String::new();
+    while let Ok(Ok(Some(chunk))) =
+        tokio::time::timeout(Duration::from_millis(500), mine.chunk()).await
+    {
+        seen_mine.push_str(&String::from_utf8_lossy(&chunk));
+    }
+    assert!(
+        !seen_mine.contains("OTHER-CLUSTER-EVENT") && !seen_mine.contains(&format!("{b}:")),
+        "nothing of the other cluster reaches them: {seen_mine}"
+    );
+}
+
+#[tokio::test]
+async fn a_deny_takes_a_cluster_away_even_from_a_group_that_may_read_everything() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (viewer, id) = user_client(&rig, "viewerone").await;
+    let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
+    let viewers = id_named(&groups, "viewers");
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{viewers}/members"),
+        json!({"users": [id]}),
+    )
+    .await;
+    let snap = viewer
+        .get(rig.url("/api/snapshot"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(
+        source_ids(&snap["nodes"]).len(),
+        2,
+        "viewers read everything"
+    );
+    team(
+        &rig,
+        "no-autonomy",
+        id,
+        &format!("path \"clusters/{b}\" {{\n capabilities = [\"deny\"]\n}}\n"),
+    )
+    .await;
+    let snap = viewer
+        .get(rig.url("/api/snapshot"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(source_ids(&snap["nodes"]), std::slice::from_ref(&a));
+    let alerts = viewer
+        .get(rig.url("/api/alerts"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert!(
+        alerts.to_string().contains(&format!("{a}:"))
+            && !alerts.to_string().contains(&format!("{b}:"))
+    );
+}
+
+#[tokio::test]
+async fn the_public_wallboard_still_shows_everything_when_it_is_public() {
+    let rig = Rig::start().await;
+    rig.setup_admin(true).await;
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let snap = Client::new()
+        .get(rig.url("/api/snapshot"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(source_ids(&snap["nodes"]), {
+        let mut v = vec![a, b];
+        v.sort();
+        v
+    });
+    assert_eq!(
+        Client::new()
+            .get(rig.url("/api/sources"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "the list of sources is not for the wallboard"
+    );
+}

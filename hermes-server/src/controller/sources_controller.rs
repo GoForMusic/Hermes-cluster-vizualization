@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use serde_json::json;
 
-use super::{Admin, Shared, fail, internal, json_response, ok, parse};
+use super::{Admin, Member, Shared, fail, internal, json_response, ok, parse};
 use crate::manifest::{self, AgentParams};
 use crate::model::{
     AddSourceRequest, AddSourceResponse, AgentView, Source, SourceView, UpgradeRequest,
@@ -14,7 +14,7 @@ use crate::model::{
 use crate::services::UpgradeError;
 use crate::version;
 
-pub(super) async fn list_sources(State(st): State<Shared>, _: Admin) -> Response {
+pub(super) async fn list_sources(State(st): State<Shared>, Member(sight): Member) -> Response {
     let list = match st.db.sources.list_sources() {
         Ok(list) => list,
         Err(e) => return internal(e),
@@ -22,6 +22,7 @@ pub(super) async fn list_sources(State(st): State<Shared>, _: Admin) -> Response
     let expected = st.latest_agent().await;
     let views: Vec<SourceView> = list
         .into_iter()
+        .filter(|source| sight.sees(&source.id))
         .map(|source| {
             let infos = st.ingest.agents(&source.id);
             let upgrade = st.upgrades.view(&source.id, &infos);
@@ -41,6 +42,11 @@ pub(super) async fn list_sources(State(st): State<Shared>, _: Admin) -> Response
                 .collect();
             let can_upgrade = st.upgrades.can_upgrade(&source.id);
             let can_logs = st.logs.can_read(&source.id);
+            // where a source is reached from is for whoever may read the sources; somebody who is only shown a cluster is shown the cluster
+            let mut source = source;
+            if !sight.may("sources") {
+                source.endpoint.clear();
+            }
             SourceView {
                 source,
                 agents,
@@ -58,7 +64,12 @@ pub(super) async fn list_sources(State(st): State<Shared>, _: Admin) -> Response
         .iter()
         .filter_map(|v| serde_json::to_value(v).ok())
         .collect();
-    all.extend(st.links.source_views());
+    all.extend(
+        st.links
+            .source_views()
+            .into_iter()
+            .filter(|v| v["id"].as_str().is_some_and(|id| sight.sees(id))),
+    );
     json_response(StatusCode::OK, all)
 }
 

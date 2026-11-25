@@ -32,3 +32,13 @@ export function can(grants: readonly Grant[] | undefined, capability: Capability
   if (rules.some((g) => g.capabilities.includes('deny'))) return false;
   return rules.some((g) => g.capabilities.includes(capability) || (capability === 'read' && g.capabilities.includes('list')));
 }
+
+/**
+ * May the person see some cluster (the map, its alerts)? A rule for `clusters/<id>` (or `clusters/*`, or `*`) that gives `read` and is not a `deny`.
+ * `grants` undefined: a hub that does not say: yes.
+ */
+export function canSeeClusters(grants: readonly Grant[] | undefined): boolean {
+  if (!grants) return true;
+  return grants.some((g) => !g.capabilities.includes('deny') && (g.capabilities.includes('read') || g.capabilities.includes('list')) && (g.path === '*' || g.path === 'clusters' || g.path.startsWith('clusters/')))
+    || can(grants, 'read', 'snapshot');
+}

@@ -14,7 +14,7 @@ fn number(query: &HashMap<String, String>, key: &str) -> i64 {
 }
 
 pub(super) async fn list_alerts(
-    _: Viewer,
+    Viewer(sight): Viewer,
     State(st): State<Shared>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
@@ -25,7 +25,13 @@ pub(super) async fn list_alerts(
         300
     };
     match st.db.alerts.list_alerts(limit) {
-        Ok(list) => json_response(StatusCode::OK, list),
+        // the alerts of the clusters this person may see, and none of the others
+        Ok(list) => json_response(
+            StatusCode::OK,
+            list.into_iter()
+                .filter(|a| sight.sees_node(&a.node_id))
+                .collect::<Vec<_>>(),
+        ),
         Err(e) => internal(e),
     }
 }
@@ -42,7 +48,7 @@ pub(super) async fn ack_alert(
 }
 
 pub(super) async fn uptime(
-    _: Viewer,
+    Viewer(sight): Viewer,
     State(st): State<Shared>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
@@ -57,7 +63,12 @@ pub(super) async fn uptime(
         span * 1000,
         usize::try_from(buckets).unwrap_or(48),
     ) {
-        Ok(res) => json_response(StatusCode::OK, res),
+        Ok(res) => json_response(
+            StatusCode::OK,
+            res.into_iter()
+                .filter(|(id, _)| sight.sees_node(id))
+                .collect::<std::collections::HashMap<_, _>>(),
+        ),
         Err(e) => internal(e),
     }
 }
