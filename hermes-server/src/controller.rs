@@ -35,6 +35,7 @@ use tracing::error;
 
 use crate::app::AppState;
 use crate::model::User;
+use crate::policy::Cap;
 use crate::services::{IIngestService, SharedCommLog, SharedUpgrades};
 use crate::version::VERSION;
 
@@ -124,6 +125,19 @@ pub fn routes(state: Shared) -> Router {
         .route(
             "/api/groups/{id}/members",
             put(access_controller::set_members),
+        )
+        .route(
+            "/api/groups/{id}/policies",
+            put(access_controller::set_group_policies),
+        )
+        .route(
+            "/api/policies",
+            get(access_controller::list_policies).post(access_controller::create_policy),
+        )
+        .route("/api/policies/check", get(access_controller::check))
+        .route(
+            "/api/policies/{id}",
+            patch(access_controller::update_policy).delete(access_controller::delete_policy),
         )
         .route("/api/alerts/{id}/ack", post(alerts_controller::ack_alert))
         .route(
@@ -250,7 +264,23 @@ fn csrf_failed() -> Response {
     fail(StatusCode::FORBIDDEN, "missing X-Requested-With header")
 }
 
-/// A logged-in admin; a call that changes something must also carry the CSRF header.
+/// What a request is, to the policies: the path without `/api/` (`/api/sources/s1` is `sources/s1`) and the capability its method asks for.
+fn policy_request(parts: &Parts) -> Option<(Cap, String)> {
+    let cap = Cap::of_method(parts.method.as_str())?;
+    let path = parts.uri.path();
+    let path = path.strip_prefix("/api/").unwrap_or(path);
+    Some((cap, crate::policy::clean_path(path)))
+}
+
+fn forbidden(cap: Cap, path: &str) -> Response {
+    fail(
+        StatusCode::FORBIDDEN,
+        &format!("not allowed: {} on {path}", cap.name()),
+    )
+}
+
+/// Someone who is logged in and whose policies allow this very call (the method and the path); a call that changes something must also
+/// carry the CSRF header. A master hub's own link is allowed everything on the hub it manages.
 struct Admin(User);
 
 impl FromRequestParts<Shared> for Admin {
@@ -265,7 +295,28 @@ impl FromRequestParts<Shared> for Admin {
         if !read_only && !csrf_ok(&parts.headers) {
             return Err(csrf_failed());
         }
+        let Some((cap, path)) = policy_request(parts) else {
+            return Err(fail(StatusCode::METHOD_NOT_ALLOWED, "method not allowed"));
+        };
+        if !state.authz.allowed(&user, cap, &path) {
+            return Err(forbidden(cap, &path));
+        }
         Ok(Admin(user))
+    }
+}
+
+/// Anyone who is logged in, whatever their policies: the calls about their own session (their own password).
+struct Login(User);
+
+impl FromRequestParts<Shared> for Login {
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &Shared) -> Result<Self, Response> {
+        let user = session_user(state, &parts.headers).ok_or_else(login_required)?;
+        if !csrf_ok(&parts.headers) {
+            return Err(csrf_failed());
+        }
+        Ok(Login(user))
     }
 }
 
@@ -280,10 +331,15 @@ impl FromRequestParts<Shared> for Viewer {
             return Ok(Viewer);
         }
         let public = state.auth.public_view() && !state.federation.is_locked();
-        if session_user(state, &parts.headers).is_some() || public {
+        if public {
+            return Ok(Viewer);
+        }
+        let user = session_user(state, &parts.headers).ok_or_else(login_required)?;
+        let (cap, path) = policy_request(parts).unwrap_or((Cap::Read, String::new()));
+        if state.authz.allowed(&user, cap, &path) {
             Ok(Viewer)
         } else {
-            Err(login_required())
+            Err(forbidden(cap, &path))
         }
     }
 }

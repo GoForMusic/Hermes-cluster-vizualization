@@ -13,25 +13,31 @@ import { RegistryForm } from '../../registry/RegistryForm';
 import { PageHead } from '../PageHead';
 import { Account } from './Account';
 import { GroupsTab, UsersTab } from './Access';
+import { PoliciesTab } from './Policies';
+import { can } from '../../../domain/access';
 
 const Row = ({ title, desc, children }: { title: string; desc: string; children: ReactNode }) => (
   <div className="row"><div><b>{title}</b><span className="d">{desc}</span></div>{children}</div>
 );
 
+/** `needs`: what the person has to be allowed to read for the section to be offered (they would only get refusals). */
 const SECTIONS = [
-  { id: 'general', label: 'General' },
-  { id: 'users', label: 'Users' },
-  { id: 'groups', label: 'Groups' },
-  { id: 'profile', label: 'Profile' },
+  { id: 'general', label: 'General', needs: '' },
+  { id: 'users', label: 'Users', needs: 'users' },
+  { id: 'groups', label: 'Groups', needs: 'groups' },
+  { id: 'policies', label: 'Policies', needs: 'policies' },
+  { id: 'profile', label: 'Profile', needs: '' },
 ] as const;
 
 /** `arg` is the section (`#/admin/settings/users`); nothing, or one that does not exist, is General. */
 export function Settings({ arg = '' }: { arg?: string }) {
-  const section = SECTIONS.find((s) => s.id === arg)?.id ?? 'general';
+  const { auth } = useSession();
+  const offered = SECTIONS.filter((s) => !s.needs || can(auth.grants, 'read', s.needs));
+  const section = offered.find((s) => s.id === arg)?.id ?? 'general';
   return (
     <>
       <PageHead title="Settings">
-        {SECTIONS.map((s) => <a key={s.id} href={`#/admin/settings/${s.id}`} className={`pill${s.id === section ? ' on' : ''}`}>{s.label}</a>)}
+        {offered.map((s) => <a key={s.id} href={`#/admin/settings/${s.id}`} className={`pill${s.id === section ? ' on' : ''}`}>{s.label}</a>)}
       </PageHead>
       {section === 'general' ? (
         <>
@@ -44,6 +50,7 @@ export function Settings({ arg = '' }: { arg?: string }) {
       ) : null}
       {section === 'users' ? <UsersTab /> : null}
       {section === 'groups' ? <GroupsTab /> : null}
+      {section === 'policies' ? <PoliciesTab /> : null}
       {section === 'profile' ? <Account /> : null}
     </>
   );

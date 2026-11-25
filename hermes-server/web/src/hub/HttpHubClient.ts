@@ -107,6 +107,12 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       updateGroup: (id, patch) => call('PATCH', `/api/groups/${id}`, patch),
       deleteGroup: (id) => send('DELETE', `/api/groups/${id}`),
       setMembers: (id, users) => call('PUT', `/api/groups/${id}/members`, { users }),
+      setGroupPolicies: (id, policies) => call('PUT', `/api/groups/${id}/policies`, { policies }),
+      policies: () => get('/api/policies'),
+      createPolicy: (input) => call('POST', '/api/policies', input),
+      updatePolicy: (id, patch) => call('PATCH', `/api/policies/${id}`, patch),
+      deletePolicy: (id) => send('DELETE', `/api/policies/${id}`),
+      check: (user, capability, path) => get(`/api/policies/check?user=${user}&capability=${encodeURIComponent(capability)}&path=${encodeURIComponent(path)}`),
     },
     uptime: {
       load: (span, buckets) => get(`/api/uptime?span=${span}&buckets=${buckets}`),

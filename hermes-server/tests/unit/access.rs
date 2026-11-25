@@ -1,5 +1,8 @@
 use super::*;
+use std::sync::Arc;
+
 use crate::database::Repositories;
+use crate::services::AuthzImp;
 
 struct Rig {
     access: AccessImp,
@@ -8,7 +11,14 @@ struct Rig {
 
 fn rig() -> Rig {
     let db = Repositories::sqlite_in_memory().unwrap();
-    let access = AccessImp::new(db.users.clone(), db.groups.clone(), db.sessions.clone());
+    let authz = Arc::new(AuthzImp::new(db.policies.clone()));
+    let access = AccessImp::new(
+        db.users.clone(),
+        db.groups.clone(),
+        db.policies.clone(),
+        db.sessions.clone(),
+        authz,
+    );
     Rig { access, db }
 }
 
@@ -293,4 +303,48 @@ fn an_older_database_gets_the_new_columns_and_its_first_admin_becomes_break_glas
             .collect::<Vec<_>>(),
         vec![("first", true, false), ("second", false, false)]
     );
+}
+
+#[test]
+fn an_update_finds_the_starting_policies_and_groups_with_every_old_account_an_owner_and_seeds_only_once()
+ {
+    use crate::database::{DBContext_SQLite, IDbContext, IGroupDAO, IPolicyDAO};
+    use rusqlite::Connection;
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+           role TEXT NOT NULL DEFAULT 'admin', created INTEGER NOT NULL);
+         INSERT INTO users(username,password_hash,created) VALUES('first','h',1),('second','h',2);",
+    )
+    .unwrap();
+    let ctx =
+        Arc::new(DBContext_SQLite::from_connection(conn, crate::crypto::Key::random()).unwrap());
+    let policies = crate::database::PolicyDAOImp::new(ctx.clone());
+    let groups = crate::database::GroupDAOImp::new(ctx.clone());
+
+    let names: Vec<String> = policies
+        .list_policies()
+        .unwrap()
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
+    assert_eq!(names, ["admin", "read-only"]);
+    let owners = groups.group_by_name("owners").unwrap().unwrap();
+    assert_eq!(
+        groups.memberships().unwrap(),
+        vec![(owners.id, 1), (owners.id, 2)],
+        "every account that existed is an owner"
+    );
+    assert!(groups.group_by_name("everyone").unwrap().unwrap().system);
+    // owners get the admin policy: an old account can still do everything
+    let rules = policies.policies_of_user(1).unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0].0, "admin");
+
+    // what the admin changes stays: starting again does not bring a deleted group back
+    groups
+        .delete_group(groups.group_by_name("viewers").unwrap().unwrap().id)
+        .unwrap();
+    crate::database::seed_access_again(ctx.conn()).unwrap();
+    assert!(groups.group_by_name("viewers").unwrap().is_none());
 }

@@ -11,6 +11,7 @@ use crate::model::Group;
 pub trait IGroupDAO: Send + Sync {
     fn list_groups(&self) -> Result<Vec<Group>>;
     fn group(&self, id: i64) -> Result<Option<Group>>;
+    fn group_by_name(&self, name: &str) -> Result<Option<Group>>;
     /// Fails when the name is taken.
     fn create_group(&self, name: &str, description: &str, created: i64) -> Result<Group>;
     fn update_group(&self, id: i64, name: Option<&str>, description: Option<&str>) -> Result<()>;
@@ -38,14 +39,16 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<Group> {
         name: r.get(1)?,
         description: r.get(2)?,
         created: r.get(3)?,
+        system: r.get(4)?,
     })
 }
 
 impl IGroupDAO for GroupDAOImp {
     fn list_groups(&self) -> Result<Vec<Group>> {
         let conn = self.ctx.conn();
-        let mut stmt =
-            conn.prepare("SELECT id,name,description,created FROM groups ORDER BY name")?;
+        let mut stmt = conn.prepare(
+            "SELECT id,name,description,created,system FROM groups ORDER BY system DESC, name",
+        )?;
         Ok(stmt.query_map([], read)?.collect::<Result<_, _>>()?)
     }
 
@@ -54,8 +57,20 @@ impl IGroupDAO for GroupDAOImp {
             .ctx
             .conn()
             .query_row(
-                "SELECT id,name,description,created FROM groups WHERE id=?1",
+                "SELECT id,name,description,created,system FROM groups WHERE id=?1",
                 [id],
+                read,
+            )
+            .optional()?)
+    }
+
+    fn group_by_name(&self, name: &str) -> Result<Option<Group>> {
+        Ok(self
+            .ctx
+            .conn()
+            .query_row(
+                "SELECT id,name,description,created,system FROM groups WHERE name=?1",
+                [name],
                 read,
             )
             .optional()?)
@@ -72,6 +87,7 @@ impl IGroupDAO for GroupDAOImp {
             name: name.into(),
             description: description.into(),
             created,
+            system: false,
         })
     }
 
@@ -93,6 +109,7 @@ impl IGroupDAO for GroupDAOImp {
         let mut conn = self.ctx.conn();
         let tx = conn.transaction()?;
         tx.execute("DELETE FROM group_members WHERE group_id=?1", [id])?;
+        tx.execute("DELETE FROM group_policies WHERE group_id=?1", [id])?;
         tx.execute("DELETE FROM groups WHERE id=?1", [id])?;
         Ok(tx.commit()?)
     }

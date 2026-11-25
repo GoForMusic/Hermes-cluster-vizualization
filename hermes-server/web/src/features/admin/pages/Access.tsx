@@ -2,27 +2,31 @@
 // deleted: the way in when something else (an identity provider, later) is down or set up wrong.
 import { useCallback, useEffect, useState } from 'react';
 import type { GroupView } from '../../../generated/GroupView';
+import type { PolicyView } from '../../../generated/PolicyView';
 import type { UserView } from '../../../generated/UserView';
 import { useClient } from '../../../state/context';
 import { Dialog } from '../../../ui/dialog';
+import { Icon } from '../../../ui/icons';
+import { ListBar, usePaged } from '../../../ui/paging';
 import { StatusChip } from '../../../ui/status';
 import { errorText, useAsyncSubmit } from '../../../ui/hooks';
 import { useSession } from '../../../app/session';
 
 /** Both lists, loaded together: a user shows its groups and a group its members. */
-function useAccess() {
+export function useAccess() {
   const client = useClient();
   const [users, setUsers] = useState<UserView[]>([]);
   const [groups, setGroups] = useState<GroupView[]>([]);
+  const [policies, setPolicies] = useState<PolicyView[]>([]);
   const [error, setError] = useState('');
   const reload = useCallback(async () => {
     try {
-      const [u, g] = await Promise.all([client.access.users(), client.access.groups()]);
-      setUsers(u); setGroups(g); setError('');
+      const [u, g, p] = await Promise.all([client.access.users(), client.access.groups(), client.access.policies()]);
+      setUsers(u); setGroups(g); setPolicies(p); setError('');
     } catch (e) { setError(errorText(e)); }
   }, [client]);
   useEffect(() => { void reload(); }, [reload]);
-  return { users, groups, error, reload };
+  return { users, groups, policies, error, reload };
 }
 
 export function UsersTab() {
@@ -31,8 +35,8 @@ export function UsersTab() {
 }
 
 export function GroupsTab() {
-  const { users, groups, error, reload } = useAccess();
-  return <>{error ? <div className="err" role="alert">{error}</div> : null}<Groups users={users} groups={groups} reload={reload} /></>;
+  const { users, groups, policies, error, reload } = useAccess();
+  return <>{error ? <div className="err" role="alert">{error}</div> : null}<Groups users={users} groups={groups} policies={policies} reload={reload} /></>;
 }
 
 interface Lists { users: UserView[]; groups: GroupView[]; reload: () => Promise<void> }
@@ -42,21 +46,25 @@ function Users({ users, groups, reload }: Lists) {
   const [editing, setEditing] = useState<UserView | null>(null);
   const [removing, setRemoving] = useState<UserView | null>(null);
   const names = new Map(groups.map((g) => [g.id, g.name]));
+  const matches = useCallback((u: UserView, text: string) => `${u.username} ${u.email} ${u.groups.map((g) => names.get(g) ?? '').join(' ')}`.toLowerCase().includes(text), [names]);
+  const paged = usePaged(users, matches);
   return (
     <>
       <p className="help">
-        Everyone listed here can log in and, until policies arrive, does everything an admin does. A <b>break-glass</b> account is a local account that always
-        keeps its password: it cannot be disabled or deleted, and there is always at least one, so a broken sign-in setup never locks everybody out.
+        What a user may do comes from the groups they are in: each group gives its policies. A user in no group can log in and do nothing. A <b>break-glass</b> account is a
+        local account that always keeps its password and may do everything: it cannot be disabled or deleted, and there is always at least one, so a broken sign-in setup never
+        locks everybody out.
       </p>
       <div className="card">
         <div className="card-head"><h3>Users</h3><button className="btn primary xs" onClick={() => setCreating(true)}>+ Add user</button></div>
+        <ListBar paged={paged} label="Search users" placeholder="Search by name, email or group…" />
         <table className="tbl">
           <thead><tr>{['User', 'Email', 'Groups', ''].map((t) => <th key={t}>{t}</th>)}</tr></thead>
           <tbody>
-            {users.map((u) => (
+            {paged.shown.map((u) => (
               <tr key={u.id}>
                 <td>
-                  <b>{u.username}</b>{' '}
+                  <span className="who"><Icon name="user" size={16} /><b>{u.username}</b></span>{' '}
                   {u.breakGlass ? <StatusChip status="warn">Break-glass</StatusChip> : null}{' '}
                   {u.disabled ? <StatusChip status="crit">Disabled</StatusChip> : null}
                 </td>
@@ -168,44 +176,57 @@ function DeleteUser({ user, onClose, onDone }: { user: UserView; onClose: () => 
   );
 }
 
-function Groups({ users, groups, reload }: Lists) {
+interface GroupLists extends Lists { policies: PolicyView[] }
+
+function Groups({ users, groups, policies, reload }: GroupLists) {
   const [editing, setEditing] = useState<GroupView | 'new' | null>(null);
   const [removing, setRemoving] = useState<GroupView | null>(null);
   const names = new Map(users.map((u) => [u.id, u.username]));
+  const policyNames = new Map(policies.map((p) => [p.id, p.name]));
+  const matches = useCallback((g: GroupView, text: string) => `${g.name} ${g.description} ${g.policies.map((p) => policyNames.get(p) ?? '').join(' ')}`.toLowerCase().includes(text), [policyNames]);
+  const paged = usePaged(groups, matches);
   return (
     <>
-      <p className="help">A group is a set of users. Permissions are given to groups, not to people: that comes with policies.</p>
+      <p className="help">
+        A group is a set of users and the policies it gives them: <b>owners</b> may do everything, <b>viewers</b> may only look, and <b>everyone</b> is every user
+        (it gives nothing until you give it a policy). A user gets what all of their groups give together.
+      </p>
       <div className="card">
         <div className="card-head"><h3>Groups</h3><button className="btn primary xs" onClick={() => setEditing('new')}>+ Add group</button></div>
-        {groups.length ? (
+        <ListBar paged={paged} label="Search groups" placeholder="Search by name or policy…" />
+        {paged.total ? (
           <table className="tbl">
-            <thead><tr>{['Group', 'Members', ''].map((t) => <th key={t}>{t}</th>)}</tr></thead>
+            <thead><tr>{['Group', 'Policies', 'Members', ''].map((t) => <th key={t}>{t}</th>)}</tr></thead>
             <tbody>
-              {groups.map((g) => (
+              {paged.shown.map((g) => (
                 <tr key={g.id}>
-                  <td><b>{g.name}</b>{g.description ? <div className="muted">{g.description}</div> : null}</td>
-                  <td>{g.members.length ? g.members.map((m) => names.get(m) ?? '?').join(', ') : <span className="muted">nobody</span>}</td>
+                  <td><span className="who"><Icon name="group" size={16} /><b>{g.name}</b></span>{g.description ? <div className="muted">{g.description}</div> : null}</td>
+                  <td>{g.policies.length ? g.policies.map((p) => policyNames.get(p) ?? '?').join(', ') : <span className="muted">none</span>}</td>
+                  <td>{g.system ? <span className="muted">every user</span> : g.members.length ? g.members.map((m) => names.get(m) ?? '?').join(', ') : <span className="muted">nobody</span>}</td>
                   <td className="r">
                     <button className="btn xs" onClick={() => setEditing(g)}>Edit</button>{' '}
-                    <button className="btn xs danger" onClick={() => setRemoving(g)}>Delete</button>
+                    {g.system ? null : <button className="btn xs danger" onClick={() => setRemoving(g)}>Delete</button>}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        ) : <div className="empty"><b>No groups yet</b>Add one, then put users in it.</div>}
+        ) : <div className="empty"><b>{groups.length ? 'No group matches' : 'No groups yet'}</b>{groups.length ? 'Try another search.' : 'Add one, then put users in it.'}</div>}
       </div>
-      {editing ? <EditGroup key={editing === 'new' ? 'new' : editing.id} group={editing === 'new' ? null : editing} users={users} onClose={() => setEditing(null)} onDone={reload} /> : null}
+      {editing ? <EditGroup key={editing === 'new' ? 'new' : editing.id} group={editing === 'new' ? null : editing} users={users} policies={policies} onClose={() => setEditing(null)} onDone={reload} /> : null}
       {removing ? <DeleteGroup key={removing.id} group={removing} onClose={() => setRemoving(null)} onDone={reload} /> : null}
     </>
   );
 }
 
-function EditGroup({ group, users, onClose, onDone }: { group: GroupView | null; users: UserView[]; onClose: () => void; onDone: () => Promise<void> }) {
+function EditGroup({ group, users, policies, onClose, onDone }: { group: GroupView | null; users: UserView[]; policies: PolicyView[]; onClose: () => void; onDone: () => Promise<void> }) {
   const client = useClient();
   const [name, setName] = useState(group?.name ?? '');
   const [description, setDescription] = useState(group?.description ?? '');
   const [members, setMembers] = useState<number[]>(group?.members ?? []);
+  const [given, setGiven] = useState<number[]>(group?.policies ?? []);
+  const system = group?.system === true;
+  const differs = (a: number[], b: number[]) => a.slice().sort().join() !== b.slice().sort().join();
   const { busy, error, submit } = useAsyncSubmit(async () => {
     let id = group?.id;
     if (group) {
@@ -216,23 +237,32 @@ function EditGroup({ group, users, onClose, onDone }: { group: GroupView | null;
     } else {
       id = (await client.access.createGroup({ name, description })).id;
     }
-    if (id !== undefined && (!group || members.slice().sort().join() !== group.members.slice().sort().join())) await client.access.setMembers(id, members);
+    if (id !== undefined && !system && (!group || differs(members, group.members))) await client.access.setMembers(id, members);
+    if (id !== undefined && (!group ? given.length > 0 : differs(given, group.policies))) await client.access.setGroupPolicies(id, given);
     await onDone();
     onClose();
   });
-  const toggle = (id: number, on: boolean) => setMembers(on ? [...members, id] : members.filter((m) => m !== id));
+  const toggle = (list: number[], set: (l: number[]) => void, id: number, on: boolean) => set(on ? [...list, id] : list.filter((m) => m !== id));
   return (
     <Dialog open onClose={onClose}>
       <h2>{group ? group.name : 'Add group'}</h2>
       <form className="form" onSubmit={submit}>
-        <label className="f">Name<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" /></label>
+        <label className="f">Name<input value={name} disabled={system} onChange={(e) => setName(e.target.value)} autoComplete="off" /></label>
         <label className="f">Description (optional)<input value={description} onChange={(e) => setDescription(e.target.value)} autoComplete="off" /></label>
         <fieldset className="f">
-          <legend>Members</legend>
-          {users.map((u) => (
-            <label key={u.id} className="check"><input type="checkbox" checked={members.includes(u.id)} onChange={(e) => toggle(u.id, e.target.checked)} /> {u.username}</label>
-          ))}
+          <legend>Policies this group gives</legend>
+          {policies.length ? policies.map((p) => (
+            <label key={p.id} className="check"><input type="checkbox" checked={given.includes(p.id)} onChange={(e) => toggle(given, setGiven, p.id, e.target.checked)} /> {p.name}</label>
+          )) : <span className="muted">No policies yet</span>}
         </fieldset>
+        {system ? <p className="help">Every user is in this group; there are no members to choose.</p> : (
+          <fieldset className="f">
+            <legend>Members</legend>
+            {users.map((u) => (
+              <label key={u.id} className="check"><input type="checkbox" checked={members.includes(u.id)} onChange={(e) => toggle(members, setMembers, u.id, e.target.checked)} /> {u.username}</label>
+            ))}
+          </fieldset>
+        )}
         <div className="err" role="alert">{error}</div>
         <div className="dlg-actions">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>

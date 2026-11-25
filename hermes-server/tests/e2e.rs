@@ -478,10 +478,417 @@ async fn the_admin_manages_accounts_and_groups_and_a_disabled_account_cannot_log
         .await;
     assert_eq!(del.status(), StatusCode::OK);
     let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
-    assert_eq!(groups[0]["members"], json!([]));
+    let ops = groups
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["name"] == "ops")
+        .unwrap();
+    assert_eq!(ops["members"], json!([]));
     assert_eq!(
         me().await.unwrap().json::<Value>().await.unwrap()["authenticated"],
         false
+    );
+}
+
+/// A second browser, logged in as `name` (made by the admin of `rig`, with `PASSWORD`).
+async fn user_client(rig: &Rig, name: &str) -> (Client, i64) {
+    let made = rig
+        .post(
+            "/api/users",
+            json!({"username": name, "password": PASSWORD}),
+        )
+        .await;
+    assert_eq!(made.status(), StatusCode::CREATED);
+    let id = made.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let http = Client::builder().cookie_store(true).build().unwrap();
+    let r = http
+        .post(rig.url("/api/auth/login"))
+        .header("X-Requested-With", "hermes")
+        .json(&json!({"username": name, "password": PASSWORD}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    (http, id)
+}
+
+async fn status_of(rig: &Rig, http: &Client, method: reqwest::Method, path: &str) -> StatusCode {
+    http.request(method, rig.url(path))
+        .header("X-Requested-With", "hermes")
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .status()
+}
+
+fn id_named(list: &Value, name: &str) -> i64 {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["name"] == name)
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_hub_starts_with_the_policies_and_groups_an_update_must_find() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let policies: Value = rig.get("/api/policies").await.json().await.unwrap();
+    let names: Vec<&str> = policies
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["admin", "read-only"]);
+    assert!(policies[0]["builtin"].as_bool().unwrap());
+    let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
+    let by = |n: &str| {
+        groups
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|g| g["name"] == n)
+            .unwrap()
+            .clone()
+    };
+    let (owners, viewers, everyone) = (by("owners"), by("viewers"), by("everyone"));
+    assert_eq!(owners["policies"], json!([policies[0]["id"]]));
+    assert_eq!(viewers["policies"], json!([policies[1]["id"]]));
+    assert_eq!(
+        everyone["policies"],
+        json!([]),
+        "everyone has no policy until you give it one"
+    );
+    assert_eq!(everyone["system"], true);
+    // the account of the first-run setup is an owner
+    let admin_id = rig.get("/api/users").await.json::<Value>().await.unwrap()[0]["id"].clone();
+    assert_eq!(owners["members"], json!([admin_id]));
+    assert_eq!(
+        everyone["members"],
+        json!([admin_id]),
+        "everyone lists every user"
+    );
+}
+
+#[tokio::test]
+async fn what_a_user_may_do_comes_from_the_policies_of_their_groups() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (bob, bob_id) = user_client(&rig, "bobby").await;
+    let get = reqwest::Method::GET;
+    let post = reqwest::Method::POST;
+
+    // in no group: nothing, and the page that says who they are still works
+    assert_eq!(
+        status_of(&rig, &bob, get.clone(), "/api/sources").await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status_of(&rig, &bob, get.clone(), "/api/snapshot").await,
+        StatusCode::FORBIDDEN
+    );
+    let me: Value = bob
+        .get(rig.url("/api/auth/status"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        (me["authenticated"].clone(), me["grants"].clone()),
+        (json!(true), json!([]))
+    );
+    let refused: Value = bob
+        .get(rig.url("/api/sources"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(refused["error"], "not allowed: read on sources");
+
+    // viewers: read-only
+    let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
+    let viewers = id_named(&groups, "viewers");
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{viewers}/members"),
+        json!({"users": [bob_id]}),
+    )
+    .await;
+    assert_eq!(
+        status_of(&rig, &bob, get.clone(), "/api/sources").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status_of(&rig, &bob, get.clone(), "/api/users").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status_of(&rig, &bob, post.clone(), "/api/sources").await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status_of(&rig, &bob, reqwest::Method::DELETE, "/api/sources/s1").await,
+        StatusCode::FORBIDDEN
+    );
+    // their own password is theirs whatever the policies say
+    let pw = bob
+        .post(rig.url("/api/auth/password"))
+        .header("X-Requested-With", "hermes")
+        .json(&json!({"current": PASSWORD, "next": "a different long password"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pw.status(), StatusCode::OK);
+
+    // a policy of the admin's own: write on sources, but never on the prod ones
+    let made = rig
+        .post(
+            "/api/policies",
+            json!({"name": "source-editor", "hcl": "path \"sources/*\" {\n capabilities = [\"read\", \"update\"]\n}\npath \"sources/prod-*\" {\n capabilities = [\"deny\"]\n}\n"}),
+        )
+        .await;
+    assert_eq!(made.status(), StatusCode::CREATED);
+    let editor = made.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let devs = rig
+        .post("/api/groups", json!({"name": "dev"}))
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{devs}/policies"),
+        json!({"policies": [editor]}),
+    )
+    .await;
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{devs}/members"),
+        json!({"users": [bob_id]}),
+    )
+    .await;
+    let patch = reqwest::Method::PATCH;
+    assert_ne!(
+        status_of(&rig, &bob, patch.clone(), "/api/sources/s1").await,
+        StatusCode::FORBIDDEN,
+        "allowed: it got as far as the source (and was refused there, for what it sent)"
+    );
+    assert_eq!(
+        status_of(&rig, &bob, patch, "/api/sources/prod-eu").await,
+        StatusCode::FORBIDDEN
+    );
+
+    // everyone: give a policy to all of them at once
+    let everyone = id_named(
+        &rig.get("/api/groups").await.json::<Value>().await.unwrap(),
+        "everyone",
+    );
+    let read_only = id_named(
+        &rig.get("/api/policies")
+            .await
+            .json::<Value>()
+            .await
+            .unwrap(),
+        "read-only",
+    );
+    // out of viewers, only `dev` is left, and it covers sources and nothing else
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{viewers}/members"),
+        json!({"users": []}),
+    )
+    .await;
+    assert_eq!(
+        status_of(&rig, &bob, get.clone(), "/api/settings").await,
+        StatusCode::FORBIDDEN
+    );
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{everyone}/policies"),
+        json!({"policies": [read_only]}),
+    )
+    .await;
+    assert_eq!(
+        status_of(&rig, &bob, get.clone(), "/api/settings").await,
+        StatusCode::OK
+    );
+
+    // the break-glass account is not asked at all
+    assert_eq!(rig.get("/api/users").await.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn policies_are_checked_when_they_are_saved_and_the_built_in_ones_stay() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let bad = rig
+        .post(
+            "/api/policies",
+            json!({"name": "oops", "hcl": "path \"a\" {"}),
+        )
+        .await;
+    assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        bad.json::<Value>().await.unwrap()["error"]
+            .as_str()
+            .unwrap()
+            .contains("line 1")
+    );
+    let nope = rig
+        .post(
+            "/api/policies",
+            json!({"name": "oops", "hcl": "path \"a\" { capabilities = [\"write\"] }"}),
+        )
+        .await;
+    assert!(
+        nope.json::<Value>().await.unwrap()["error"]
+            .as_str()
+            .unwrap()
+            .contains("unknown capability")
+    );
+    assert_eq!(
+        rig.post("/api/policies", json!({"name": "Not Ok", "hcl": ""}))
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let ok = rig
+        .post("/api/policies", json!({"name": "empty", "hcl": ""}))
+        .await;
+    assert_eq!(ok.status(), StatusCode::CREATED);
+    assert_eq!(
+        rig.post("/api/policies", json!({"name": "empty", "hcl": ""}))
+            .await
+            .status(),
+        StatusCode::CONFLICT
+    );
+
+    let policies: Value = rig.get("/api/policies").await.json().await.unwrap();
+    let admin = id_named(&policies, "admin");
+    let gone = rig
+        .send(
+            reqwest::Method::DELETE,
+            &format!("/api/policies/{admin}"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(gone.status(), StatusCode::CONFLICT);
+    let renamed = rig
+        .send(
+            reqwest::Method::PATCH,
+            &format!("/api/policies/{admin}"),
+            json!({"name": "root"}),
+        )
+        .await;
+    assert_eq!(renamed.status(), StatusCode::CONFLICT);
+    let edited = rig
+        .send(
+            reqwest::Method::PATCH,
+            &format!("/api/policies/{admin}"),
+            json!({"description": "all"}),
+        )
+        .await;
+    assert_eq!(edited.status(), StatusCode::OK);
+    let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
+    let everyone = id_named(&groups, "everyone");
+    assert_eq!(
+        rig.send(
+            reqwest::Method::DELETE,
+            &format!("/api/groups/{everyone}"),
+            json!({})
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        rig.send(
+            reqwest::Method::PUT,
+            &format!("/api/groups/{everyone}/members"),
+            json!({"users": []})
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
+    let empty = id_named(&policies_after(&rig).await, "empty");
+    assert_eq!(
+        rig.send(
+            reqwest::Method::DELETE,
+            &format!("/api/policies/{empty}"),
+            json!({})
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+}
+
+async fn ask(rig: &Rig, user: i64, cap: &str, path: &str) -> Value {
+    rig.get(&format!(
+        "/api/policies/check?user={user}&capability={cap}&path={path}"
+    ))
+    .await
+    .json()
+    .await
+    .unwrap()
+}
+
+async fn policies_after(rig: &Rig) -> Value {
+    rig.get("/api/policies").await.json().await.unwrap()
+}
+
+#[tokio::test]
+async fn the_admin_can_ask_what_a_user_would_be_allowed() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (_bob, bob_id) = user_client(&rig, "bobby").await;
+    let none = ask(&rig, bob_id, "read", "sources").await;
+    assert_eq!(
+        (none["allowed"].clone(), none["reason"].as_str().unwrap()),
+        (json!(false), "no policy of this user covers it")
+    );
+    let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
+    let viewers = id_named(&groups, "viewers");
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{viewers}/members"),
+        json!({"users": [bob_id]}),
+    )
+    .await;
+    let read = ask(&rig, bob_id, "read", "sources/s1").await;
+    assert_eq!(
+        (read["allowed"].clone(), read["reason"].as_str().unwrap()),
+        (json!(true), "allowed by read-only")
+    );
+    assert_eq!(
+        ask(&rig, bob_id, "delete", "sources/s1").await["allowed"],
+        false
+    );
+    assert_eq!(
+        rig.get(&format!(
+            "/api/policies/check?user={bob_id}&capability=bogus&path=x"
+        ))
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        rig.get("/api/policies/check?user=9999&capability=read&path=x")
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
     );
 }
 
@@ -524,9 +931,15 @@ async fn the_first_visit_creates_the_admin_and_logs_them_in() {
     );
 
     let status: Value = rig.get("/api/auth/status").await.json().await.unwrap();
+    // the first account is break-glass: it is told it may do everything
+    assert_eq!(status["grants"][0]["path"], "*");
     assert_eq!(
-        status,
-        json!({"setupRequired": false, "authenticated": true, "publicView": false, "username": "admin"})
+        status["grants"][0]["capabilities"],
+        json!(["read", "list", "create", "update", "delete"])
+    );
+    assert_eq!(
+        (status["authenticated"].clone(), status["username"].clone()),
+        (json!(true), json!("admin"))
     );
     assert_eq!(
         rig.post(

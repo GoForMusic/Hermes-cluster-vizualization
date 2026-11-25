@@ -7,6 +7,8 @@ import type { AuthStatus } from '../generated/AuthStatus';
 import type { CommLogEntry } from '../generated/CommLogEntry';
 import type { CommLogView } from '../generated/CommLogView';
 import type { FederationView } from '../generated/FederationView';
+import type { AccessCheck } from '../generated/AccessCheck';
+import type { PolicyView } from '../generated/PolicyView';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
 import type { GroupView } from '../generated/GroupView';
@@ -40,6 +42,9 @@ export interface FakeHub {
   /** the accounts and groups the fake hub holds */
   users: UserView[];
   groups: GroupView[];
+  policies: PolicyView[];
+  /** what "Test access" answers */
+  check: AccessCheck;
   /** when set, the next change to an account or a group is refused with this */
   accessError: string;
   data: { nodes: ReturnType<typeof wireNode>[]; edges: ReturnType<typeof wireEdge>[] };
@@ -62,6 +67,8 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     federation: { name: 'dc1', member: null, datacenters: [] },
     users: [{ id: 1, username: 'admin', email: '', role: 'admin', disabled: false, breakGlass: true, created: 1, groups: [] }],
     groups: [],
+    policies: [],
+    check: { allowed: true, reason: 'allowed by read-only' },
     accessError: '',
     data: { nodes: [wireNode('c', 'cluster', null), wireNode('h', 'host', 'c'), wireNode('w', 'workload', 'h', { meta: { ns: 'default' } })], edges: [] },
     client: null as unknown as IHubClient,
@@ -147,7 +154,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
       createGroup: async (i) => {
         note(`access.createGroup:${i.name}`);
         refuse();
-        const g: GroupView = { id: hub.groups.length + 20, name: i.name, description: i.description, created: 2, members: [] };
+        const g: GroupView = { id: hub.groups.length + 20, name: i.name, description: i.description, created: 2, members: [], system: false, policies: [] };
         hub.groups = [...hub.groups, g];
         return g;
       },
@@ -158,6 +165,28 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
         return hub.groups.find((g) => g.id === id)!;
       },
       deleteGroup: async (id) => { note(`access.deleteGroup:${id}`); refuse(); hub.groups = hub.groups.filter((g) => g.id !== id); },
+      setGroupPolicies: async (id, policies) => {
+        note(`access.setGroupPolicies:${id}:${policies.join(',')}`);
+        refuse();
+        hub.groups = hub.groups.map((g) => (g.id === id ? { ...g, policies } : g));
+        return hub.groups.find((g) => g.id === id)!;
+      },
+      policies: async () => hub.policies,
+      createPolicy: async (i) => {
+        note(`access.createPolicy:${i.name}`);
+        refuse();
+        const p: PolicyView = { id: hub.policies.length + 30, name: i.name, description: i.description, hcl: i.hcl, builtin: false, created: 2, groups: [] };
+        hub.policies = [...hub.policies, p];
+        return p;
+      },
+      updatePolicy: async (id, patch) => {
+        note(`access.updatePolicy:${id}:${JSON.stringify(patch)}`);
+        refuse();
+        hub.policies = hub.policies.map((p) => (p.id === id ? { ...p, ...patch } : p));
+        return hub.policies.find((p) => p.id === id)!;
+      },
+      deletePolicy: async (id) => { note(`access.deletePolicy:${id}`); refuse(); hub.policies = hub.policies.filter((p) => p.id !== id); },
+      check: async (user, capability, path) => { note(`access.check:${user}:${capability}:${path}`); refuse(); return hub.check; },
       setMembers: async (id, users) => {
         note(`access.setMembers:${id}:${users.join(',')}`);
         refuse();

@@ -14,7 +14,7 @@ use base64::engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::database::{ISessionDAO, ISettingsDAO, IUserDAO, NewUser, now_ms};
+use crate::database::{IGroupDAO, ISessionDAO, ISettingsDAO, IUserDAO, NewUser, now_ms};
 use crate::model::User;
 
 pub const SESSION_TTL_MS: i64 = 14 * 24 * 3600 * 1000;
@@ -178,6 +178,7 @@ pub trait IAuth: Send + Sync {
 
 pub struct AuthImp {
     users: Arc<dyn IUserDAO>,
+    groups: Arc<dyn IGroupDAO>,
     sessions: Arc<dyn ISessionDAO>,
     settings: Arc<dyn ISettingsDAO>,
     now: Clock,
@@ -191,20 +192,23 @@ pub struct AuthImp {
 impl AuthImp {
     pub fn new(
         users: Arc<dyn IUserDAO>,
+        groups: Arc<dyn IGroupDAO>,
         sessions: Arc<dyn ISessionDAO>,
         settings: Arc<dyn ISettingsDAO>,
     ) -> Self {
-        Self::with_clock(users, sessions, settings, Arc::new(now_ms))
+        Self::with_clock(users, groups, sessions, settings, Arc::new(now_ms))
     }
 
     pub fn with_clock(
         users: Arc<dyn IUserDAO>,
+        groups: Arc<dyn IGroupDAO>,
         sessions: Arc<dyn ISessionDAO>,
         settings: Arc<dyn ISettingsDAO>,
         now: Clock,
     ) -> Self {
         Self {
             users,
+            groups,
             sessions,
             settings,
             now,
@@ -280,6 +284,18 @@ impl IAuth for AuthImp {
             break_glass: true,
             created: (self.now)(),
         })?;
+        // and in `owners`, the group of the `admin` policy: what the first account was able to do before groups existed
+        if let Some(owners) = self.groups.group_by_name("owners")? {
+            let mut members: Vec<i64> = self
+                .groups
+                .memberships()?
+                .into_iter()
+                .filter(|(g, _)| *g == owners.id)
+                .map(|(_, u)| u)
+                .collect();
+            members.push(user.id);
+            self.groups.set_members(owners.id, &members)?;
+        }
         self.set_public_view(public_view)?;
         self.new_session(user.id)
     }

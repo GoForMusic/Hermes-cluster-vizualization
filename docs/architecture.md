@@ -57,7 +57,30 @@ Settings → Users and Groups (`/api/users`, `/api/groups`, admin only; `AccessI
 email, and can be **disabled** (cannot log in, its sessions end at once) or **break-glass**: a local account with a password that is never disabled or
 deleted, with at least one always left, so a broken sign-in setup (an identity provider that is down) never locks everybody out. The account the first-run
 setup makes is break-glass, and so is the first account of a hub that was created before this existed. Nobody disables, deletes or resets their own account
-from the list. A group is a set of users; what a group may do comes with policies (next). Until then every account is an admin.
+from the list.
+
+### Groups and policies
+
+A **group** is a set of users; a **policy** says what its users may do, and is given to groups (Settings → Policies, Groups). A user gets what all their groups give
+together, plus what the system group `everyone` gives (every user is in it; it has no policy until you give it one). A policy is HCL, the way Vault writes it:
+
+```hcl
+path "sources/*"       { capabilities = ["read", "list"] }
+path "sources/prod-*"  { capabilities = ["deny"] }
+```
+
+A request is a capability on a path. The HTTP method gives the capability (GET `read`, POST `create`, PUT/PATCH `update`, DELETE `delete`) and the URL without
+`/api/` gives the path: `PATCH /api/sources/s1` is `update` on `sources/s1`; through a master hub, `dc/<id>/sources/s1`. In a rule, a path is exact, ends in `*` for
+everything below it, or has `+` for one segment. Every rule that covers the request counts: a `deny` in any of them refuses it, otherwise it is allowed when some rule
+has its capability, and when no rule covers it it is refused. (`list` is today the same as `read`.) The page gets the user's rules with `GET /api/auth/status`
+(`grants`) and leaves out what would be refused; the hub decides (`policy.rs`, `services/authz_imp.rs`, the `Admin` and `Viewer` extractors in `controller.rs`).
+A user's own password (`POST /api/auth/password`) needs only a login. A break-glass account is not asked at all.
+
+What a hub starts with, and what an update finds there: the policies `admin` (everything) and `read-only`, and the groups `owners` (admin), `viewers` (read-only)
+and `everyone`. The first start with this version creates them once (`settings.access.seeded`), and puts every account that already exists in `owners`, so nobody
+loses what they could do. Afterwards they are yours: edit or delete them, or add your own, in the page or directly in `policies`, `groups`, `group_members` and
+`group_policies` in `hub.db` (the hub reads the policies again every few seconds). A policy that does not parse is ignored (nothing is allowed by it) and logged.
+
 
 ### Under a sub-path
 

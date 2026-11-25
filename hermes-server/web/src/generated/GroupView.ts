@@ -5,6 +5,14 @@
  */
 export type GroupView = { id: number, name: string, description: string, created: number, 
 /**
- * The ids of the users in this group.
+ * The ids of the users in this group (all of them, for `everyone`).
  */
-members: Array<number>, };
+members: Array<number>, 
+/**
+ * `everyone`: it has no members to choose, only policies.
+ */
+system: boolean, 
+/**
+ * The ids of the policies this group gives its members.
+ */
+policies: Array<number>, };

@@ -12,6 +12,7 @@ fn rig() -> (AuthImp, Arc<AtomicI64>) {
     (
         AuthImp::with_clock(
             db.users.clone(),
+            db.groups.clone(),
             db.sessions.clone(),
             db.settings.clone(),
             Arc::new(move || c.load(Ordering::SeqCst)),

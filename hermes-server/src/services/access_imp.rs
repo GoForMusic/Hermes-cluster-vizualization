@@ -8,8 +8,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use crate::database::{IGroupDAO, ISessionDAO, IUserDAO, NewUser, UserPatch, now_ms};
-use crate::model::{Group, GroupView, User, UserView};
+use crate::database::{IGroupDAO, IPolicyDAO, ISessionDAO, IUserDAO, NewUser, UserPatch, now_ms};
+use crate::model::{AccessCheck, Group, GroupView, Policy, PolicyView, User, UserView};
+use crate::policy::{self, Cap, Decision};
+use crate::services::IAuthz;
 use crate::services::auth_imp::{MIN_PASSWORD, hash_password, normalize};
 
 #[derive(Debug)]
@@ -18,6 +20,10 @@ pub enum AccessError {
     WeakPassword,
     BadEmail,
     BadGroupName,
+    BadPolicyName,
+    /// The policy does not parse: what is wrong with it.
+    BadPolicy(String),
+    BadCheck,
     /// The username or the group name is in use.
     Taken,
     NotFound,
@@ -35,6 +41,9 @@ impl fmt::Display for AccessError {
             Self::WeakPassword => "password must be at least 10 characters",
             Self::BadEmail => "that is not an email address",
             Self::BadGroupName => "a group name is 1-64 characters with no line breaks",
+            Self::BadPolicyName => "a policy name is 1-64 characters: lowercase letters, digits, dot, dash or underscore",
+            Self::BadPolicy(why) => why,
+            Self::BadCheck => "ask with a user, a capability (read, list, create, update or delete) and a path",
             Self::Taken => "that name is already in use",
             Self::NotFound => "not found",
             Self::Protected(why) => why,
@@ -88,12 +97,34 @@ pub trait IAccess: Send + Sync {
     fn delete_group(&self, id: i64) -> Result<(), AccessError>;
     /// Makes exactly these users the members of the group.
     fn set_members(&self, id: i64, users: &[i64]) -> Result<GroupView, AccessError>;
+    /// Makes exactly these policies the ones the group gives.
+    fn set_group_policies(&self, id: i64, policies: &[i64]) -> Result<GroupView, AccessError>;
+
+    fn policies(&self) -> Result<Vec<PolicyView>, AccessError>;
+    fn create_policy(
+        &self,
+        name: &str,
+        description: &str,
+        hcl: &str,
+    ) -> Result<PolicyView, AccessError>;
+    fn update_policy(
+        &self,
+        id: i64,
+        name: Option<&str>,
+        description: Option<&str>,
+        hcl: Option<&str>,
+    ) -> Result<PolicyView, AccessError>;
+    fn delete_policy(&self, id: i64) -> Result<(), AccessError>;
+    /// Would `user` be allowed `capability` on `path`, and why.
+    fn check(&self, user: i64, capability: &str, path: &str) -> Result<AccessCheck, AccessError>;
 }
 
 pub struct AccessImp {
     users: Arc<dyn IUserDAO>,
     groups: Arc<dyn IGroupDAO>,
+    policies: Arc<dyn IPolicyDAO>,
     sessions: Arc<dyn ISessionDAO>,
+    authz: Arc<dyn IAuthz>,
     now: Arc<dyn Fn() -> i64 + Send + Sync>,
     /// The rules look at several accounts and then change one: one change at a time.
     write: Mutex<()>,
@@ -103,12 +134,16 @@ impl AccessImp {
     pub fn new(
         users: Arc<dyn IUserDAO>,
         groups: Arc<dyn IGroupDAO>,
+        policies: Arc<dyn IPolicyDAO>,
         sessions: Arc<dyn ISessionDAO>,
+        authz: Arc<dyn IAuthz>,
     ) -> Self {
         Self {
             users,
             groups,
+            policies,
             sessions,
+            authz,
             now: Arc::new(now_ms),
             write: Mutex::default(),
         }
@@ -143,14 +178,29 @@ impl AccessImp {
     }
 
     fn group_view(&self, group: &Group) -> Result<GroupView, AccessError> {
-        let members = self
-            .groups
-            .memberships()?
+        self.groups()?
             .into_iter()
-            .filter(|(g, _)| *g == group.id)
-            .map(|(_, u)| u)
+            .find(|g| g.id == group.id)
+            .ok_or(AccessError::NotFound)
+    }
+
+    fn policy_view(&self, policy: &Policy) -> Result<PolicyView, AccessError> {
+        let groups = self
+            .policies
+            .group_policies()?
+            .into_iter()
+            .filter(|(_, p)| *p == policy.id)
+            .map(|(g, _)| g)
             .collect();
-        Ok(view_of(group, members))
+        Ok(PolicyView {
+            id: policy.id,
+            name: policy.name.clone(),
+            description: policy.description.clone(),
+            hcl: policy.hcl.clone(),
+            builtin: policy.builtin,
+            created: policy.created,
+            groups,
+        })
     }
 
     /// Break-glass accounts that can still log in, other than `except`.
@@ -164,14 +214,38 @@ impl AccessImp {
     }
 }
 
-fn view_of(group: &Group, members: Vec<i64>) -> GroupView {
+fn view_of(group: &Group, members: Vec<i64>, policies: Vec<i64>) -> GroupView {
     GroupView {
         id: group.id,
         name: group.name.clone(),
         description: group.description.clone(),
         created: group.created,
         members,
+        system: group.system,
+        policies,
     }
+}
+
+fn clean_policy_name(name: &str) -> Result<String, AccessError> {
+    let name = name.trim();
+    let ok = (1..=64).contains(&name.len())
+        && name.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        });
+    if ok {
+        Ok(name.to_string())
+    } else {
+        Err(AccessError::BadPolicyName)
+    }
+}
+
+fn valid_hcl(text: &str) -> Result<(), AccessError> {
+    if text.len() > 64 * 1024 {
+        return Err(AccessError::BadPolicy("a policy is at most 64 KiB".into()));
+    }
+    policy::parse(text)
+        .map(|_| ())
+        .map_err(|e| AccessError::BadPolicy(e.to_string()))
 }
 
 fn clean_email(email: &str) -> Result<String, AccessError> {
@@ -343,7 +417,9 @@ impl IAccess for AccessImp {
                 "a break-glass account cannot be deleted: take the flag off first",
             ));
         }
-        Ok(self.users.delete_user(id)?)
+        self.users.delete_user(id)?;
+        self.authz.forget();
+        Ok(())
     }
 
     fn groups(&self) -> Result<Vec<GroupView>, AccessError> {
@@ -351,11 +427,23 @@ impl IAccess for AccessImp {
         for (g, u) in self.groups.memberships()? {
             members.entry(g).or_default().push(u);
         }
+        let mut policies: HashMap<i64, Vec<i64>> = HashMap::new();
+        for (g, p) in self.policies.group_policies()? {
+            policies.entry(g).or_default().push(p);
+        }
+        let everybody: Vec<i64> = self.users.list_users()?.iter().map(|u| u.id).collect();
         Ok(self
             .groups
             .list_groups()?
             .iter()
-            .map(|g| view_of(g, members.remove(&g.id).unwrap_or_default()))
+            .map(|g| {
+                let who = if g.system {
+                    everybody.clone()
+                } else {
+                    members.remove(&g.id).unwrap_or_default()
+                };
+                view_of(g, who, policies.remove(&g.id).unwrap_or_default())
+            })
             .collect())
     }
 
@@ -366,7 +454,7 @@ impl IAccess for AccessImp {
             .groups
             .create_group(&name, &clean_description(description), (self.now)())
             .map_err(taken_or)?;
-        Ok(view_of(&group, vec![]))
+        Ok(view_of(&group, vec![], vec![]))
     }
 
     fn update_group(
@@ -378,7 +466,10 @@ impl IAccess for AccessImp {
         let name = name.map(clean_group_name).transpose()?;
         let description = description.map(clean_description);
         let _one = self.lock();
-        self.groups.group(id)?.ok_or(AccessError::NotFound)?;
+        let group = self.groups.group(id)?.ok_or(AccessError::NotFound)?;
+        if group.system && name.as_deref().is_some_and(|n| n != group.name) {
+            return Err(AccessError::Protected("this group cannot be renamed"));
+        }
         self.groups
             .update_group(id, name.as_deref(), description.as_deref())
             .map_err(taken_or)?;
@@ -388,19 +479,148 @@ impl IAccess for AccessImp {
 
     fn delete_group(&self, id: i64) -> Result<(), AccessError> {
         let _one = self.lock();
-        self.groups.group(id)?.ok_or(AccessError::NotFound)?;
-        Ok(self.groups.delete_group(id)?)
+        let group = self.groups.group(id)?.ok_or(AccessError::NotFound)?;
+        if group.system {
+            return Err(AccessError::Protected("this group cannot be deleted"));
+        }
+        self.groups.delete_group(id)?;
+        self.authz.forget();
+        Ok(())
     }
 
     fn set_members(&self, id: i64, users: &[i64]) -> Result<GroupView, AccessError> {
         let _one = self.lock();
         let group = self.groups.group(id)?.ok_or(AccessError::NotFound)?;
+        if group.system {
+            return Err(AccessError::Protected(
+                "every user is in this group already",
+            ));
+        }
         let existing: Vec<i64> = self.users.list_users()?.iter().map(|u| u.id).collect();
         if users.iter().any(|u| !existing.contains(u)) {
             return Err(AccessError::NotFound);
         }
         self.groups.set_members(id, users)?;
+        self.authz.forget();
         self.group_view(&group)
+    }
+
+    fn set_group_policies(&self, id: i64, policies: &[i64]) -> Result<GroupView, AccessError> {
+        let _one = self.lock();
+        let group = self.groups.group(id)?.ok_or(AccessError::NotFound)?;
+        let existing: Vec<i64> = self
+            .policies
+            .list_policies()?
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        if policies.iter().any(|p| !existing.contains(p)) {
+            return Err(AccessError::NotFound);
+        }
+        self.policies.set_group_policies(id, policies)?;
+        self.authz.forget();
+        self.group_view(&group)
+    }
+
+    fn policies(&self) -> Result<Vec<PolicyView>, AccessError> {
+        let mut by_policy: HashMap<i64, Vec<i64>> = HashMap::new();
+        for (g, p) in self.policies.group_policies()? {
+            by_policy.entry(p).or_default().push(g);
+        }
+        Ok(self
+            .policies
+            .list_policies()?
+            .into_iter()
+            .map(|p| PolicyView {
+                groups: by_policy.remove(&p.id).unwrap_or_default(),
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                hcl: p.hcl,
+                builtin: p.builtin,
+                created: p.created,
+            })
+            .collect())
+    }
+
+    fn create_policy(
+        &self,
+        name: &str,
+        description: &str,
+        hcl: &str,
+    ) -> Result<PolicyView, AccessError> {
+        let name = clean_policy_name(name)?;
+        valid_hcl(hcl)?;
+        let _one = self.lock();
+        let policy = self
+            .policies
+            .create_policy(&name, &clean_description(description), hcl, (self.now)())
+            .map_err(taken_or)?;
+        self.policy_view(&policy)
+    }
+
+    fn update_policy(
+        &self,
+        id: i64,
+        name: Option<&str>,
+        description: Option<&str>,
+        hcl: Option<&str>,
+    ) -> Result<PolicyView, AccessError> {
+        let name = name.map(clean_policy_name).transpose()?;
+        if let Some(text) = hcl {
+            valid_hcl(text)?;
+        }
+        let description = description.map(clean_description);
+        let _one = self.lock();
+        let policy = self.policies.policy(id)?.ok_or(AccessError::NotFound)?;
+        if policy.builtin && name.as_deref().is_some_and(|n| n != policy.name) {
+            return Err(AccessError::Protected(
+                "a built-in policy cannot be renamed",
+            ));
+        }
+        self.policies
+            .update_policy(id, name.as_deref(), description.as_deref(), hcl)
+            .map_err(taken_or)?;
+        self.authz.forget();
+        let policy = self.policies.policy(id)?.ok_or(AccessError::NotFound)?;
+        self.policy_view(&policy)
+    }
+
+    fn delete_policy(&self, id: i64) -> Result<(), AccessError> {
+        let _one = self.lock();
+        let policy = self.policies.policy(id)?.ok_or(AccessError::NotFound)?;
+        if policy.builtin {
+            return Err(AccessError::Protected(
+                "a built-in policy cannot be deleted",
+            ));
+        }
+        self.policies.delete_policy(id)?;
+        self.authz.forget();
+        Ok(())
+    }
+
+    fn check(&self, user: i64, capability: &str, path: &str) -> Result<AccessCheck, AccessError> {
+        let cap = Cap::parse(capability)
+            .filter(|c| *c != Cap::Deny)
+            .ok_or(AccessError::BadCheck)?;
+        if path.trim().is_empty() {
+            return Err(AccessError::BadCheck);
+        }
+        let user = self.user(user)?;
+        let decision = self.authz.decide(&user, cap, path);
+        let join = |by: &[String]| by.join(", ");
+        let reason = match &decision {
+            Decision::Allowed { by } if by == &["break-glass"] => {
+                "a break-glass account can do everything".to_string()
+            }
+            Decision::Allowed { by } => format!("allowed by {}", join(by)),
+            Decision::Denied { by } => format!("denied by {}", join(by)),
+            Decision::NoRule => "no policy of this user covers it".to_string(),
+        };
+        Ok(AccessCheck {
+            allowed: decision.allowed(),
+            reason,
+        })
     }
 }
 
