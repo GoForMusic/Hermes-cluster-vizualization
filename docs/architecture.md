@@ -82,6 +82,15 @@ loses what they could do. Afterwards they are yours: edit or delete them, or add
 `group_policies` in `hub.db` (the hub reads the policies again every few seconds). A policy that does not parse is ignored (nothing is allowed by it) and logged.
 
 
+### How long a login lasts
+
+Settings → Security (`GET/PUT /api/security`, stored in `settings` as `auth.session_policy`): **log out after** N hours (1 to 720, 336 = 14 days by default) however busy the
+person is, and **log out after being away** N minutes (off, or 5 to 1440). Both are judged on every request against the session's creation and last use, so a new limit
+counts for the logins that already exist (a session from before the hub kept its creation time ends at its own end). The cookie's `Max-Age` is the longest login. What
+counts as being away is a request from the person, not an open page: the event stream is only asked once a minute whether its session is still good (`is_alive`, which does
+not count as use), and it is closed when it is not, so an open tab cannot outlive its login. That also means a wallboard that is logged in (View without login off) is
+signed out by the away limit; give it a long one. After a login ends, the login screen says so.
+
 ### Under a sub-path
 
 `HUB_BASE_PATH=/hermes` mounts everything (web app, REST, SSE, the agents' gRPC) under that path, for a proxy that routes `host/hermes` to the hub and

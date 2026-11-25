@@ -16,6 +16,7 @@ mod hub_event;
 mod hub_info;
 mod node;
 mod registry;
+mod session_policy;
 mod source;
 mod source_view;
 mod upgrade_view;
@@ -41,6 +42,7 @@ pub use registry::{
     DEFAULT_LINUX_IMAGE, DEFAULT_WINDOWS_IMAGE, RegistryConfig, RegistryInput, RegistryTest,
     RegistryView,
 };
+pub use session_policy::SessionPolicy;
 pub use source::{
     Source, TYPE_DOCKER_AGENT, TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT, is_agent_type,
 };

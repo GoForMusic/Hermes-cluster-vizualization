@@ -31,7 +31,7 @@ export function App() {
       {phase.kind === 'pairing' ? <PairingScreen member={phase.member} first={pairingCode} onPaired={reboot} onCancel={() => { setPairingCode(null); reboot(); }} /> : null}
       {phase.kind === 'managed' ? <ManagedScreen member={phase.member} /> : null}
       {phase.kind === 'setup' && registryStep ? <SetupRegistry onDone={() => { setRegistryStep(false); reboot(); }} /> : null}
-      {phase.kind === 'login' ? <AuthScreen mode="login" onDone={reboot} /> : null}
+      {phase.kind === 'login' ? <AuthScreen mode="login" expired={phase.expired} onDone={reboot} /> : null}
       {phase.kind === 'fatal' ? (
         <div className="fatal">
           <h1>Cannot reach the hub</h1>

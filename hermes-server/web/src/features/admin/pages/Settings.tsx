@@ -14,6 +14,7 @@ import { PageHead } from '../PageHead';
 import { Account } from './Account';
 import { GroupsTab, UsersTab } from './Access';
 import { PoliciesTab } from './Policies';
+import { Security } from './Security';
 import { can } from '../../../domain/access';
 
 const Row = ({ title, desc, children }: { title: string; desc: string; children: ReactNode }) => (
@@ -26,6 +27,7 @@ const SECTIONS = [
   { id: 'users', label: 'Users', needs: 'users' },
   { id: 'groups', label: 'Groups', needs: 'groups' },
   { id: 'policies', label: 'Policies', needs: 'policies' },
+  { id: 'security', label: 'Security', needs: 'security' },
   { id: 'profile', label: 'Profile', needs: '' },
 ] as const;
 
@@ -51,6 +53,7 @@ export function Settings({ arg = '' }: { arg?: string }) {
       {section === 'users' ? <UsersTab /> : null}
       {section === 'groups' ? <GroupsTab /> : null}
       {section === 'policies' ? <PoliciesTab /> : null}
+      {section === 'security' ? <Security /> : null}
       {section === 'profile' ? <Account /> : null}
     </>
   );

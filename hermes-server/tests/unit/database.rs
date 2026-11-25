@@ -94,9 +94,19 @@ fn users_and_sessions() {
         "hash"
     );
     assert!(db.users.user_by_name("nobody").unwrap().is_none());
-    db.sessions.create_session("h1", u.id, 100).unwrap();
-    db.sessions.create_session("h2", u.id, 300).unwrap();
-    assert_eq!(db.sessions.session("h1").unwrap(), Some((u.id, 100)));
+    db.sessions.create_session("h1", u.id, 10, 100).unwrap();
+    db.sessions.create_session("h2", u.id, 10, 300).unwrap();
+    assert_eq!(
+        db.sessions.session("h1").unwrap(),
+        Some(SessionRow {
+            user_id: u.id,
+            created: 10,
+            expires: 100,
+            last_seen: 10
+        })
+    );
+    db.sessions.touch_session("h1", 50).unwrap();
+    assert_eq!(db.sessions.session("h1").unwrap().unwrap().last_seen, 50);
     db.sessions.delete_expired_sessions(200).unwrap();
     assert_eq!(
         (

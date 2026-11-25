@@ -9,7 +9,8 @@ import { errorText as message } from '../ui/hooks';
 export type Phase =
   | { kind: 'loading' }
   | { kind: 'setup' }
-  | { kind: 'login' }
+  /** `expired`: they were in, and the hub does not know them any more (the login ran out, or was ended). */
+  | { kind: 'login'; expired?: boolean }
   /** This hub waits for the master that will manage it (and has no admin yet): it shows the pairing code. */
   | { kind: 'pairing'; member: MemberView }
   /** Another hub manages this one: there is nothing to log in to. */
@@ -25,6 +26,7 @@ export function useBoot(admin: boolean): { phase: Phase; reboot: () => void; ref
   const { client, store } = useHub();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const wasIn = useRef(false); // somebody was logged in on this page: a login screen after that is a login that ended
   const adminRef = useRef(admin);
   adminRef.current = admin;
   const reboot = useCallback(() => setAttempt((n) => n + 1), []);
@@ -40,16 +42,17 @@ export function useBoot(admin: boolean): { phase: Phase; reboot: () => void; ref
       if (auth.member?.state === 'paired') { setPhase({ kind: 'managed', member: auth.member }); return; }
       if (auth.setupRequired && auth.member?.state === 'waiting') { setPhase({ kind: 'pairing', member: auth.member }); return; }
       if (auth.setupRequired) { setPhase({ kind: 'setup' }); return; }
-      if (!auth.authenticated && (adminRef.current || !auth.publicView)) { setPhase({ kind: 'login' }); return; }
+      if (!auth.authenticated && (adminRef.current || !auth.publicView)) { setPhase({ kind: 'login', expired: wasIn.current }); return; }
       try {
         await store.load(auth.authenticated); // source details are for admins only
       } catch (e) {
         if (cancelled) return;
-        setPhase(e instanceof HubError && e.authRequired ? { kind: 'login' } : { kind: 'fatal', message: message(e) });
+        setPhase(e instanceof HubError && e.authRequired ? { kind: 'login', expired: wasIn.current } : { kind: 'fatal', message: message(e) });
         return;
       }
       if (cancelled) return;
       stop = store.startLive(reboot); // the hub refused the stream: find out who this is again
+      wasIn.current = auth.authenticated;
       setPhase({ kind: 'ready', auth });
     })();
     return () => { cancelled = true; stop?.(); };

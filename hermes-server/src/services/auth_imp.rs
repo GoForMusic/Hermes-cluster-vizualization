@@ -15,11 +15,13 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::database::{IGroupDAO, ISessionDAO, ISettingsDAO, IUserDAO, NewUser, now_ms};
-use crate::model::User;
+use crate::model::{SessionPolicy, User};
 
-pub const SESSION_TTL_MS: i64 = 14 * 24 * 3600 * 1000;
 pub(crate) const MIN_PASSWORD: usize = 10;
 const PUBLIC_VIEW_KEY: &str = "auth.public_view";
+const SESSION_POLICY_KEY: &str = "auth.session_policy";
+/// A session is marked as used at most this often: a page that asks every second does not write to the database every second.
+const TOUCH_EVERY_MS: i64 = 30_000;
 
 // argon2id, the OWASP-recommended password hash
 const MEMORY_KIB: u32 = 64 * 1024;
@@ -35,6 +37,7 @@ pub enum AuthError {
     RateLimited,
     BadUsername,
     WeakPassword,
+    BadSessionPolicy,
     Internal(anyhow::Error),
 }
 
@@ -48,6 +51,7 @@ impl fmt::Display for AuthError {
                 "username must be 3-32 characters: letters, digits, dot, dash or underscore"
             }
             Self::WeakPassword => "password must be at least 10 characters",
+            Self::BadSessionPolicy => "a login lasts 1 hour to 30 days, and the inactivity limit is off or 5 minutes to a day",
             Self::Internal(_) => "internal error",
         })
     }
@@ -164,8 +168,13 @@ pub trait IAuth: Send + Sync {
     /// `ip` and the username together are what the rate limit counts.
     fn login(&self, username: &str, password: &str, ip: &str) -> Result<String, AuthError>;
     fn logout(&self, token: &str);
-    /// Resolves a cookie token to its user, or `None` (unknown or expired).
+    /// Resolves a cookie token to its user, or `None` (unknown, expired, or idle for too long). A call that finds the session alive marks it used.
     fn authenticate(&self, token: &str) -> Option<User>;
+    /// Whether the session is still good, without marking it used: what a stream that the page keeps open asks.
+    fn is_alive(&self, token: &str) -> bool;
+    /// How long a login lasts.
+    fn session_policy(&self) -> SessionPolicy;
+    fn set_session_policy(&self, policy: SessionPolicy) -> Result<(), AuthError>;
     /// Checks the current password, sets the new one, ends every session of that user and returns a fresh session token for the caller.
     fn change_password(&self, user_id: i64, current: &str, next: &str)
     -> Result<String, AuthError>;
@@ -247,12 +256,47 @@ impl AuthImp {
     fn new_session(&self, user_id: i64) -> Result<String, AuthError> {
         let raw: [u8; 32] = rand::random();
         let token = URL_SAFE_NO_PAD.encode(raw);
+        let now = (self.now)();
         self.sessions.create_session(
             &hash_token(&token),
             user_id,
-            (self.now)() + SESSION_TTL_MS,
+            now,
+            now + self.session_policy().max_ms(),
         )?;
         Ok(token)
+    }
+}
+
+impl AuthImp {
+    /// The session behind a token, if it is still good under the policy of now: not past its end, not older than the longest login, not idle
+    /// for longer than the limit. One that is not is deleted. `touch`: it was used just now.
+    fn check(&self, token: &str, touch: bool) -> Option<User> {
+        if token.is_empty() {
+            return None;
+        }
+        let hash = hash_token(token);
+        let row = self.sessions.session(&hash).ok().flatten()?;
+        let now = (self.now)();
+        let policy = self.session_policy();
+        // a session from before `created` was kept has only its end, which was set from the 14 days of the time
+        let too_old = row.created > 0 && now - row.created > policy.max_ms();
+        let idle = policy
+            .idle_ms()
+            .is_some_and(|limit| row.last_seen > 0 && now - row.last_seen > limit);
+        if row.expires < now || too_old || idle {
+            let _ = self.sessions.delete_session(&hash);
+            return None;
+        }
+        let user = self
+            .users
+            .user_by_id(row.user_id)
+            .ok()
+            .flatten()
+            .filter(|u| !u.disabled)?;
+        if touch && now - row.last_seen >= TOUCH_EVERY_MS {
+            let _ = self.sessions.touch_session(&hash, now);
+        }
+        Some(user)
     }
 }
 
@@ -326,20 +370,27 @@ impl IAuth for AuthImp {
     }
 
     fn authenticate(&self, token: &str) -> Option<User> {
-        if token.is_empty() {
-            return None;
+        self.check(token, true)
+    }
+
+    fn is_alive(&self, token: &str) -> bool {
+        self.check(token, false).is_some()
+    }
+
+    fn session_policy(&self) -> SessionPolicy {
+        self.settings
+            .get_setting(SESSION_POLICY_KEY)
+            .and_then(|raw| serde_json::from_str::<SessionPolicy>(&raw).ok())
+            .filter(SessionPolicy::valid)
+            .unwrap_or(SessionPolicy::DEFAULT)
+    }
+
+    fn set_session_policy(&self, policy: SessionPolicy) -> Result<(), AuthError> {
+        if !policy.valid() {
+            return Err(AuthError::BadSessionPolicy);
         }
-        let hash = hash_token(token);
-        let (user_id, expires) = self.sessions.session(&hash).ok().flatten()?;
-        if expires < (self.now)() {
-            let _ = self.sessions.delete_session(&hash);
-            return None;
-        }
-        self.users
-            .user_by_id(user_id)
-            .ok()
-            .flatten()
-            .filter(|u| !u.disabled)
+        let raw = serde_json::to_string(&policy).map_err(|e| AuthError::Internal(e.into()))?;
+        Ok(self.settings.set_setting(SESSION_POLICY_KEY, &raw)?)
     }
 
     fn change_password(

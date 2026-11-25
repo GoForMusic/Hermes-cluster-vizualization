@@ -39,7 +39,7 @@ pub use group_dao_imp::{GroupDAOImp, IGroupDAO};
 pub use i_db_context::IDbContext;
 pub use policy_dao_imp::{IPolicyDAO, PolicyDAOImp};
 pub use registry_dao_imp::{IRegistryDAO, RegistryDAOImp};
-pub use session_dao_imp::{ISessionDAO, SessionDAOImp};
+pub use session_dao_imp::{ISessionDAO, SessionDAOImp, SessionRow};
 pub use settings_dao_imp::{ISettingsDAO, SettingsDAOImp};
 pub use source_dao_imp::{ISourceDAO, SourceDAOImp};
 pub use user_dao_imp::{IUserDAO, NewUser, UserDAOImp, UserPatch};
