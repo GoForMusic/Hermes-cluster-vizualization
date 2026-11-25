@@ -264,9 +264,9 @@ pub(super) async fn get_security(State(st): State<Shared>, _: Admin) -> Response
 
 /// `PUT /api/security`: how long a login lasts. It counts for the logins that exist as well: the next request of each is judged by it.
 pub(super) async fn put_security(State(st): State<Shared>, _: Admin, body: Bytes) -> Response {
-    let policy: SessionPolicy = match serde_json::from_slice(&body) {
+    let policy: SessionPolicy = match parse(&body) {
         Ok(p) => p,
-        Err(_) => return fail(StatusCode::BAD_REQUEST, "invalid request"),
+        Err(r) => return r,
     };
     match st.auth.set_session_policy(policy) {
         Ok(()) => json_response(StatusCode::OK, policy),
