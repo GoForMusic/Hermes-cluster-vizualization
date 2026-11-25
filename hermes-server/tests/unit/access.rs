@@ -22,15 +22,18 @@ fn rig() -> Rig {
     Rig { access, db }
 }
 
-const PW: &str = "correct horse battery";
+/// A password for a test account, made for the run: nothing in the source is a password (and a scanner has nothing to take for one).
+fn pw() -> String {
+    format!("pw-{:016x}-long-enough", rand::random::<u64>())
+}
 
 impl Rig {
     /// The account the first-run setup makes.
     fn first(&self) -> UserView {
-        self.access.create_user("root", PW, "", true).unwrap()
+        self.access.create_user("root", &pw(), "", true).unwrap()
     }
     fn user(&self, name: &str) -> UserView {
-        self.access.create_user(name, PW, "", false).unwrap()
+        self.access.create_user(name, &pw(), "", false).unwrap()
     }
 }
 
@@ -45,17 +48,17 @@ fn protected(r: Result<impl std::fmt::Debug, AccessError>) -> String {
 fn an_account_needs_a_good_name_a_long_password_and_a_real_email() {
     let r = rig();
     assert!(matches!(
-        r.access.create_user("a", PW, "", false),
+        r.access.create_user("a", &pw(), "", false),
         Err(AccessError::BadName)
     ));
     assert!(matches!(
-        r.access.create_user("alice", "short", "", false),
+        r.access.create_user("alice", &pw()[..5], "", false),
         Err(AccessError::WeakPassword)
     ));
     for bad in ["nope", "a@b", "a b@c.d", "@c.d", "a@c."] {
         assert!(
             matches!(
-                r.access.create_user("alice", PW, bad, false),
+                r.access.create_user("alice", &pw(), bad, false),
                 Err(AccessError::BadEmail)
             ),
             "{bad}"
@@ -63,14 +66,14 @@ fn an_account_needs_a_good_name_a_long_password_and_a_real_email() {
     }
     let alice = r
         .access
-        .create_user("  Alice ", PW, " alice@example.com ", false)
+        .create_user("  Alice ", &pw(), " alice@example.com ", false)
         .unwrap();
     assert_eq!(
         (alice.username.as_str(), alice.email.as_str()),
         ("alice", "alice@example.com")
     );
     assert!(matches!(
-        r.access.create_user("ALICE", PW, "", false),
+        r.access.create_user("ALICE", &pw(), "", false),
         Err(AccessError::Taken)
     ));
 }
@@ -135,7 +138,7 @@ fn nobody_disables_deletes_or_resets_their_own_account_from_the_admin_page() {
     assert!(protected(r.access.update_user(me.id, me.id, off)).contains("your own"));
     assert!(protected(r.access.delete_user(me.id, me.id)).contains("your own"));
     let reset = UserChanges {
-        password: Some(PW.into()),
+        password: Some(pw()),
         ..UserChanges::default()
     };
     assert!(protected(r.access.update_user(me.id, me.id, reset)).contains("Profile"));
@@ -156,7 +159,7 @@ fn disabling_and_resetting_a_password_end_the_sessions_of_that_account() {
         ),
         (
             UserChanges {
-                password: Some("another long password".into()),
+                password: Some(pw()),
                 ..UserChanges::default()
             },
             "reset",
@@ -182,7 +185,7 @@ fn disabling_and_resetting_a_password_end_the_sessions_of_that_account() {
             admin.id,
             bob.id,
             UserChanges {
-                password: Some("short".into()),
+                password: Some(pw()[..5].to_string()),
                 ..UserChanges::default()
             }
         ),
