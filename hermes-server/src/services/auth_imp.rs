@@ -14,11 +14,11 @@ use base64::engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::database::{ISessionDAO, ISettingsDAO, IUserDAO, now_ms};
+use crate::database::{IGroupDAO, ISessionDAO, ISettingsDAO, IUserDAO, NewUser, now_ms};
 use crate::model::User;
 
 pub const SESSION_TTL_MS: i64 = 14 * 24 * 3600 * 1000;
-const MIN_PASSWORD: usize = 10;
+pub(crate) const MIN_PASSWORD: usize = 10;
 const PUBLIC_VIEW_KEY: &str = "auth.public_view";
 
 // argon2id, the OWASP-recommended password hash
@@ -121,7 +121,7 @@ fn valid_username(name: &str) -> bool {
         })
 }
 
-fn normalize(username: &str) -> Result<String, AuthError> {
+pub(crate) fn normalize(username: &str) -> Result<String, AuthError> {
     let name = username.trim().to_lowercase();
     if valid_username(&name) {
         Ok(name)
@@ -178,6 +178,7 @@ pub trait IAuth: Send + Sync {
 
 pub struct AuthImp {
     users: Arc<dyn IUserDAO>,
+    groups: Arc<dyn IGroupDAO>,
     sessions: Arc<dyn ISessionDAO>,
     settings: Arc<dyn ISettingsDAO>,
     now: Clock,
@@ -191,20 +192,23 @@ pub struct AuthImp {
 impl AuthImp {
     pub fn new(
         users: Arc<dyn IUserDAO>,
+        groups: Arc<dyn IGroupDAO>,
         sessions: Arc<dyn ISessionDAO>,
         settings: Arc<dyn ISettingsDAO>,
     ) -> Self {
-        Self::with_clock(users, sessions, settings, Arc::new(now_ms))
+        Self::with_clock(users, groups, sessions, settings, Arc::new(now_ms))
     }
 
     pub fn with_clock(
         users: Arc<dyn IUserDAO>,
+        groups: Arc<dyn IGroupDAO>,
         sessions: Arc<dyn ISessionDAO>,
         settings: Arc<dyn ISettingsDAO>,
         now: Clock,
     ) -> Self {
         Self {
             users,
+            groups,
             sessions,
             settings,
             now,
@@ -271,9 +275,27 @@ impl IAuth for AuthImp {
         if password.chars().count() < MIN_PASSWORD {
             return Err(AuthError::WeakPassword);
         }
-        let user =
-            self.users
-                .create_user(&name, &hash_password(password), "admin", (self.now)())?;
+        // the first account is the break-glass one: it keeps its password whatever identity providers are added later
+        let user = self.users.create_user(&NewUser {
+            username: &name,
+            password_hash: &hash_password(password),
+            role: "admin",
+            email: "",
+            break_glass: true,
+            created: (self.now)(),
+        })?;
+        // and in `owners`, the group of the `admin` policy: what the first account was able to do before groups existed
+        if let Some(owners) = self.groups.group_by_name("owners")? {
+            let mut members: Vec<i64> = self
+                .groups
+                .memberships()?
+                .into_iter()
+                .filter(|(g, _)| *g == owners.id)
+                .map(|(_, u)| u)
+                .collect();
+            members.push(user.id);
+            self.groups.set_members(owners.id, &members)?;
+        }
         self.set_public_view(public_view)?;
         self.new_session(user.id)
     }
@@ -290,7 +312,8 @@ impl IAuth for AuthImp {
             password,
             user.as_ref().map_or(&self.dummy, |u| &u.password_hash),
         );
-        let Some(user) = user.filter(|_| ok) else {
+        // a disabled account is told the same as a wrong password: nothing here says that the name exists
+        let Some(user) = user.filter(|u| ok && !u.disabled) else {
             self.fail(&key);
             return Err(AuthError::BadCredentials);
         };
@@ -312,7 +335,11 @@ impl IAuth for AuthImp {
             let _ = self.sessions.delete_session(&hash);
             return None;
         }
-        self.users.user_by_id(user_id).ok().flatten()
+        self.users
+            .user_by_id(user_id)
+            .ok()
+            .flatten()
+            .filter(|u| !u.disabled)
     }
 
     fn change_password(

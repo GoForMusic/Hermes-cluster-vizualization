@@ -10,8 +10,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::{
-    Admin, COOKIE_NAME, Shared, cookie, csrf_failed, csrf_ok, fail, internal, json_response, ok,
-    parse,
+    Admin, COOKIE_NAME, Login, Shared, cookie, csrf_failed, csrf_ok, fail, internal, json_response,
+    ok, parse,
 };
 use crate::app::Settings;
 use crate::model::AuthStatus;
@@ -74,7 +74,7 @@ fn auth_error(e: AuthError) -> Response {
 
 /// Hashing takes a while and a lot of memory: off the async threads.
 #[allow(clippy::result_large_err)]
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, Response> {
     tokio::task::spawn_blocking(work).await.map_err(internal)
@@ -101,6 +101,7 @@ pub(super) async fn auth_status(State(st): State<Shared>, headers: HeaderMap) ->
         setup_required: need && !st.federation.is_locked(),
         authenticated: user.is_some(),
         public_view: st.auth.public_view() && !st.federation.is_locked(),
+        grants: user.as_ref().map(|u| st.authz.grants(u)),
         username: user.map(|u| u.username),
         member: st.federation.member_view(crate::database::now_ms()),
     };
@@ -198,7 +199,7 @@ pub(super) async fn auth_logout(State(st): State<Shared>, headers: HeaderMap) ->
 
 pub(super) async fn auth_password(
     State(st): State<Shared>,
-    Admin(user): Admin,
+    Login(user): Login,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {

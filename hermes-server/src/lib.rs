@@ -5,6 +5,7 @@ pub mod controller;
 pub mod database;
 pub mod model;
 mod modules;
+pub mod policy;
 pub mod services;
 
 // Re-exported at the crate root under their own names, so `crate::crypto::X`, `crate::flows::X`, etc. elsewhere in

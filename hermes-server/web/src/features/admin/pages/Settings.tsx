@@ -11,20 +11,47 @@ import { FederationSettings } from '../../federation/FederationSettings';
 import { useFederation } from '../../federation/useFederation';
 import { RegistryForm } from '../../registry/RegistryForm';
 import { PageHead } from '../PageHead';
+import { Account } from './Account';
+import { GroupsTab, UsersTab } from './Access';
+import { PoliciesTab } from './Policies';
+import { can } from '../../../domain/access';
 
 const Row = ({ title, desc, children }: { title: string; desc: string; children: ReactNode }) => (
   <div className="row"><div><b>{title}</b><span className="d">{desc}</span></div>{children}</div>
 );
 
-export function Settings() {
+/** `needs`: what the person has to be allowed to read for the section to be offered (they would only get refusals). */
+const SECTIONS = [
+  { id: 'general', label: 'General', needs: '' },
+  { id: 'users', label: 'Users', needs: 'users' },
+  { id: 'groups', label: 'Groups', needs: 'groups' },
+  { id: 'policies', label: 'Policies', needs: 'policies' },
+  { id: 'profile', label: 'Profile', needs: '' },
+] as const;
+
+/** `arg` is the section (`#/admin/settings/users`); nothing, or one that does not exist, is General. */
+export function Settings({ arg = '' }: { arg?: string }) {
+  const { auth } = useSession();
+  const offered = SECTIONS.filter((s) => !s.needs || can(auth.grants, 'read', s.needs));
+  const section = offered.find((s) => s.id === arg)?.id ?? 'general';
   return (
     <>
-      <PageHead title="Settings" />
-      <div className="settings-cols">
-        <section><TvSettings /></section>
-        <section><RegistrySettings /></section>
-      </div>
-      <FederationSettings />
+      <PageHead title="Settings">
+        {offered.map((s) => <a key={s.id} href={`#/admin/settings/${s.id}`} className={`pill${s.id === section ? ' on' : ''}`}>{s.label}</a>)}
+      </PageHead>
+      {section === 'general' ? (
+        <>
+          <div className="settings-cols">
+            <section><TvSettings /></section>
+            <section><RegistrySettings /></section>
+          </div>
+          <FederationSettings />
+        </>
+      ) : null}
+      {section === 'users' ? <UsersTab /> : null}
+      {section === 'groups' ? <GroupsTab /> : null}
+      {section === 'policies' ? <PoliciesTab /> : null}
+      {section === 'profile' ? <Account /> : null}
     </>
   );
 }

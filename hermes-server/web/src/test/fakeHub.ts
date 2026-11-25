@@ -7,9 +7,13 @@ import type { AuthStatus } from '../generated/AuthStatus';
 import type { CommLogEntry } from '../generated/CommLogEntry';
 import type { CommLogView } from '../generated/CommLogView';
 import type { FederationView } from '../generated/FederationView';
+import type { AccessCheck } from '../generated/AccessCheck';
+import type { PolicyView } from '../generated/PolicyView';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
+import type { GroupView } from '../generated/GroupView';
 import type { SourceView } from '../generated/SourceView';
+import type { UserView } from '../generated/UserView';
 import { wireEdge, wireNode } from './fixtures';
 
 export interface FakeHub {
@@ -35,6 +39,14 @@ export interface FakeHub {
   registryTest: RegistryTest;
   /** the federation the fake hub holds: its datacenters, or the member it is */
   federation: FederationView;
+  /** the accounts and groups the fake hub holds */
+  users: UserView[];
+  groups: GroupView[];
+  policies: PolicyView[];
+  /** what "Test access" answers */
+  check: AccessCheck;
+  /** when set, the next change to an account or a group is refused with this */
+  accessError: string;
   data: { nodes: ReturnType<typeof wireNode>[]; edges: ReturnType<typeof wireEdge>[] };
 }
 
@@ -53,10 +65,16 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     renameError: '',
     registryTest: { ok: true, message: 'connected', versions: ['1.0.1', '1.0.0'] },
     federation: { name: 'dc1', member: null, datacenters: [] },
+    users: [{ id: 1, username: 'admin', email: '', role: 'admin', disabled: false, breakGlass: true, created: 1, groups: [] }],
+    groups: [],
+    policies: [],
+    check: { allowed: true, reason: 'allowed by read-only' },
+    accessError: '',
     data: { nodes: [wireNode('c', 'cluster', null), wireNode('h', 'host', 'c'), wireNode('w', 'workload', 'h', { meta: { ns: 'default' } })], edges: [] },
     client: null as unknown as IHubClient,
   };
   const note = (call: string): void => { hub.calls.push(call); };
+  const refuse = (): void => { if (hub.accessError) throw new Error(hub.accessError); };
   hub.client = {
     auth: {
       status: async () => ({ setupRequired: false, authenticated: true, publicView: false, username: 'admin', ...auth }),
@@ -114,6 +132,68 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
       },
       enable: async (on) => { note(`commLog.enable:${on}`); hub.commLog = { ...hub.commLog, enabled: on, entries: on ? hub.commLog.entries : [] }; },
       clear: async () => { note('commLog.clear'); hub.commLog = { ...hub.commLog, entries: [] }; },
+    },
+    access: {
+      users: async () => hub.users,
+      createUser: async (i) => {
+        note(`access.createUser:${i.username}:${i.email}:${i.breakGlass}`);
+        refuse();
+        const u: UserView = { id: hub.users.length + 10, username: i.username, email: i.email, role: 'admin', disabled: false, breakGlass: i.breakGlass, created: 2, groups: [] };
+        hub.users = [...hub.users, u];
+        return u;
+      },
+      updateUser: async (id, patch) => {
+        note(`access.updateUser:${id}:${JSON.stringify(patch)}`);
+        refuse();
+        const { password: _kept, ...visible } = patch;
+        hub.users = hub.users.map((u) => (u.id === id ? { ...u, ...visible } : u));
+        return hub.users.find((u) => u.id === id)!;
+      },
+      deleteUser: async (id) => { note(`access.deleteUser:${id}`); refuse(); hub.users = hub.users.filter((u) => u.id !== id); },
+      groups: async () => hub.groups,
+      createGroup: async (i) => {
+        note(`access.createGroup:${i.name}`);
+        refuse();
+        const g: GroupView = { id: hub.groups.length + 20, name: i.name, description: i.description, created: 2, members: [], system: false, policies: [] };
+        hub.groups = [...hub.groups, g];
+        return g;
+      },
+      updateGroup: async (id, patch) => {
+        note(`access.updateGroup:${id}:${JSON.stringify(patch)}`);
+        refuse();
+        hub.groups = hub.groups.map((g) => (g.id === id ? { ...g, ...patch } : g));
+        return hub.groups.find((g) => g.id === id)!;
+      },
+      deleteGroup: async (id) => { note(`access.deleteGroup:${id}`); refuse(); hub.groups = hub.groups.filter((g) => g.id !== id); },
+      setGroupPolicies: async (id, policies) => {
+        note(`access.setGroupPolicies:${id}:${policies.join(',')}`);
+        refuse();
+        hub.groups = hub.groups.map((g) => (g.id === id ? { ...g, policies } : g));
+        return hub.groups.find((g) => g.id === id)!;
+      },
+      policies: async () => hub.policies,
+      createPolicy: async (i) => {
+        note(`access.createPolicy:${i.name}`);
+        refuse();
+        const p: PolicyView = { id: hub.policies.length + 30, name: i.name, description: i.description, hcl: i.hcl, builtin: false, created: 2, groups: [] };
+        hub.policies = [...hub.policies, p];
+        return p;
+      },
+      updatePolicy: async (id, patch) => {
+        note(`access.updatePolicy:${id}:${JSON.stringify(patch)}`);
+        refuse();
+        hub.policies = hub.policies.map((p) => (p.id === id ? { ...p, ...patch } : p));
+        return hub.policies.find((p) => p.id === id)!;
+      },
+      deletePolicy: async (id) => { note(`access.deletePolicy:${id}`); refuse(); hub.policies = hub.policies.filter((p) => p.id !== id); },
+      check: async (user, capability, path) => { note(`access.check:${user}:${capability}:${path}`); refuse(); return hub.check; },
+      setMembers: async (id, users) => {
+        note(`access.setMembers:${id}:${users.join(',')}`);
+        refuse();
+        hub.groups = hub.groups.map((g) => (g.id === id ? { ...g, members: users } : g));
+        hub.users = hub.users.map((u) => ({ ...u, groups: users.includes(u.id) ? [...new Set([...u.groups, id])] : u.groups.filter((x) => x !== id) }));
+        return hub.groups.find((g) => g.id === id)!;
+      },
     },
     uptime: { load: async (span) => { note(`uptime:${span}`); return hub.uptime; } },
     feed: { connect: (handlers) => { hub.feed.handlers = handlers; hub.feed.closed = false; return () => { hub.feed.closed = true; }; } },

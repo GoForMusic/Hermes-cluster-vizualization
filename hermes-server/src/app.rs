@@ -16,9 +16,9 @@ use tracing::warn;
 use crate::controller;
 use crate::database::{Repositories, now_ms};
 use crate::services::{
-    AuthImp, CommLogImp, EngineImp, FederationImp, GuardImp, IAuth, IEngine, IGuard,
-    IIngestService, IStore, IngestServiceImp, MasterLinks, SharedCommLog, SharedFederation,
-    SharedUpgrades, StoreImp, UpgradeServiceImp,
+    AccessImp, AuthImp, AuthzImp, CommLogImp, EngineImp, FederationImp, GuardImp, IAccess, IAuth,
+    IAuthz, IEngine, IGuard, IIngestService, IStore, IngestServiceImp, MasterLinks, SharedCommLog,
+    SharedFederation, SharedUpgrades, StoreImp, UpgradeServiceImp,
 };
 
 pub struct Settings {
@@ -44,6 +44,10 @@ pub struct AppState {
     pub store: Arc<dyn IStore>,
     pub db: Repositories,
     pub auth: Arc<dyn IAuth>,
+    /// The accounts and groups the admin page manages.
+    pub access: Arc<dyn IAccess>,
+    /// Who may do what: the policies of the groups a user is in.
+    pub authz: Arc<dyn IAuthz>,
     pub rules: Arc<dyn IEngine>,
     pub ingest: Arc<dyn IIngestService>,
     pub guard: Arc<dyn IGuard>,
@@ -129,6 +133,7 @@ impl Hub {
             db.settings.clone(),
         );
         engine.set_remote_sources(links.clone());
+        let authz: Arc<dyn IAuthz> = Arc::new(AuthzImp::new(db.policies.clone()));
         let state = AppState {
             rules: Arc::new(engine),
             ingest: Arc::new(IngestServiceImp::new(
@@ -138,9 +143,18 @@ impl Hub {
             )),
             auth: Arc::new(AuthImp::new(
                 db.users.clone(),
+                db.groups.clone(),
                 db.sessions.clone(),
                 db.settings.clone(),
             )),
+            access: Arc::new(AccessImp::new(
+                db.users.clone(),
+                db.groups.clone(),
+                db.policies.clone(),
+                db.sessions.clone(),
+                authz.clone(),
+            )),
+            authz,
             store,
             db,
             guard,

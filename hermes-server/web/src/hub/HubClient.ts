@@ -1,20 +1,24 @@
 // The boundary to the hub, as small interfaces. The store and the screens depend on THESE, never on `fetch`: a test hands them a fake, and the
 // transport (HTTP + Server-Sent Events today) can change without touching them. Each interface is what one part of the app needs.
+import type { AccessCheck } from '../generated/AccessCheck';
 import type { AddSourceRequest } from '../generated/AddSourceRequest';
 import type { AddSourceResponse } from '../generated/AddSourceResponse';
 import type { AuthStatus } from '../generated/AuthStatus';
 import type { Edge as WireEdge } from '../generated/Edge';
 import type { FederationView } from '../generated/FederationView';
 import type { MemberView } from '../generated/MemberView';
+import type { GroupView } from '../generated/GroupView';
 import type { HubEvent } from '../generated/HubEvent';
 import type { HubInfo } from '../generated/HubInfo';
 import type { Node as WireNode } from '../generated/Node';
 import type { CommLogEntry } from '../generated/CommLogEntry';
 import type { CommLogView } from '../generated/CommLogView';
+import type { PolicyView } from '../generated/PolicyView';
 import type { RegistryInput } from '../generated/RegistryInput';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
 import type { SourceView } from '../generated/SourceView';
+import type { UserView } from '../generated/UserView';
 import type { Alert, Uptime } from '../domain/model';
 import type { Settings } from '../domain/settings';
 
@@ -106,6 +110,30 @@ export interface ICommLogApi {
   clear(): Promise<void>;
 }
 
+/** Who can log in and the groups they are in. A refusal (a break-glass account that cannot be disabled, a name in use) is a `HubError` with the reason. */
+export interface IAccessApi {
+  users(): Promise<UserView[]>;
+  createUser(input: { username: string; password: string; email: string; breakGlass: boolean }): Promise<UserView>;
+  /** `password`: set by the admin; the account's sessions end. */
+  updateUser(id: number, patch: { email?: string; disabled?: boolean; breakGlass?: boolean; password?: string }): Promise<UserView>;
+  deleteUser(id: number): Promise<void>;
+  groups(): Promise<GroupView[]>;
+  createGroup(input: { name: string; description: string }): Promise<GroupView>;
+  updateGroup(id: number, patch: { name?: string; description?: string }): Promise<GroupView>;
+  deleteGroup(id: number): Promise<void>;
+  /** Makes exactly these users the members. */
+  setMembers(id: number, users: number[]): Promise<GroupView>;
+  /** Makes exactly these policies the ones the group gives. */
+  setGroupPolicies(id: number, policies: number[]): Promise<GroupView>;
+  policies(): Promise<PolicyView[]>;
+  /** `hcl` is checked by the hub: a policy that does not parse is refused with what is wrong and where. */
+  createPolicy(input: { name: string; description: string; hcl: string }): Promise<PolicyView>;
+  updatePolicy(id: number, patch: { name?: string; description?: string; hcl?: string }): Promise<PolicyView>;
+  deletePolicy(id: number): Promise<void>;
+  /** Would this user be allowed this capability on this path, and why. */
+  check(user: number, capability: string, path: string): Promise<AccessCheck>;
+}
+
 export interface IUptimeApi {
   /** `span` in seconds. */
   load(span: number, buckets: number): Promise<Record<string, Uptime>>;
@@ -132,6 +160,7 @@ export interface IHubClient {
   registry: IRegistryApi;
   federation: IFederationApi;
   commLog: ICommLogApi;
+  access: IAccessApi;
   uptime: IUptimeApi;
   feed: IEventFeed;
 }

@@ -1,6 +1,5 @@
 // The pages of the admin panel, as data: adding a page is adding a line here. The shell knows nothing about any of them.
 import type { ComponentType } from 'react';
-import { Account } from './pages/Account';
 import { Alerts } from './pages/Alerts';
 import { Dashboard } from './pages/Dashboard';
 import { Logs } from './pages/Logs';
@@ -23,5 +22,4 @@ export const ADMIN_PAGES: readonly AdminPage[] = [
   { id: 'alerts', label: 'Alerts', Component: Alerts },
   { id: 'logs', label: 'Logs', Component: Logs },
   { id: 'settings', label: 'Settings', Component: Settings },
-  { id: 'account', label: 'Account', Component: Account },
 ];
