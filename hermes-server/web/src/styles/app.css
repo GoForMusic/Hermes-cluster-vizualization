@@ -474,6 +474,11 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .tbl td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .tbl tr:last-child td { border-bottom: 0; }
 .tbl input[type=number] { width: 84px; }
+.tbl .r { text-align: right; white-space: nowrap; }
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.card-head h3 { margin: 0; }
+fieldset.f { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+fieldset.f legend { padding: 0; margin-bottom: 6px; color: var(--dim); font-size: 12px; }
 .form { display: grid; gap: 14px; }
 .form label.f { display: grid; gap: 6px; font: 500 12px var(--font); color: var(--muted); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }

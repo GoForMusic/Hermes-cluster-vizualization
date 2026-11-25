@@ -25,7 +25,12 @@ CREATE TABLE IF NOT EXISTS alerts (
 CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(ts DESC);
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'admin', created INTEGER NOT NULL);
+  role TEXT NOT NULL DEFAULT 'admin', created INTEGER NOT NULL,
+  email TEXT NOT NULL DEFAULT '', disabled INTEGER NOT NULL DEFAULT 0, break_glass INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS group_members (group_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (group_id, user_id));
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
 CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS beats (node_id TEXT NOT NULL, ts INTEGER NOT NULL, status TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_beats ON beats(node_id, ts);
@@ -55,6 +60,12 @@ impl DBContext_SQLite {
         Self::init(Connection::open_in_memory()?, Key::random())
     }
 
+    /// Migrates the database in `conn` to the current schema (a test hands it one in the shape an older hub left).
+    #[cfg(test)]
+    pub(crate) fn from_connection(conn: Connection, key: Key) -> Result<Self> {
+        Self::init(conn, key)
+    }
+
     fn init(conn: Connection, key: Key) -> Result<Self> {
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA).context("migrate")?;
@@ -72,6 +83,20 @@ impl DBContext_SQLite {
         ] {
             let _ = conn.execute(column, []);
         }
+        // the same for what an account can say about itself: an older database has `users` without these
+        for column in [
+            "ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN break_glass INTEGER NOT NULL DEFAULT 0",
+        ] {
+            let _ = conn.execute(column, []);
+        }
+        // the account that existed before there were break-glass accounts (the first admin) is the one
+        conn.execute(
+            "UPDATE users SET break_glass=1 WHERE id=(SELECT MIN(id) FROM users)
+               AND NOT EXISTS (SELECT 1 FROM users WHERE break_glass=1)",
+            [],
+        )?;
         let old = now_ms() - i64::try_from(BEATS_KEPT.as_millis()).unwrap_or(i64::MAX);
         conn.execute("DELETE FROM beats WHERE ts < ?1", [old])?;
         let ctx = Self {

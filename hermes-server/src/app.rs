@@ -16,8 +16,8 @@ use tracing::warn;
 use crate::controller;
 use crate::database::{Repositories, now_ms};
 use crate::services::{
-    AuthImp, CommLogImp, EngineImp, FederationImp, GuardImp, IAuth, IEngine, IGuard,
-    IIngestService, IStore, IngestServiceImp, MasterLinks, SharedCommLog, SharedFederation,
+    AccessImp, AuthImp, CommLogImp, EngineImp, FederationImp, GuardImp, IAccess, IAuth, IEngine,
+    IGuard, IIngestService, IStore, IngestServiceImp, MasterLinks, SharedCommLog, SharedFederation,
     SharedUpgrades, StoreImp, UpgradeServiceImp,
 };
 
@@ -44,6 +44,8 @@ pub struct AppState {
     pub store: Arc<dyn IStore>,
     pub db: Repositories,
     pub auth: Arc<dyn IAuth>,
+    /// The accounts and groups the admin page manages.
+    pub access: Arc<dyn IAccess>,
     pub rules: Arc<dyn IEngine>,
     pub ingest: Arc<dyn IIngestService>,
     pub guard: Arc<dyn IGuard>,
@@ -140,6 +142,11 @@ impl Hub {
                 db.users.clone(),
                 db.sessions.clone(),
                 db.settings.clone(),
+            )),
+            access: Arc::new(AccessImp::new(
+                db.users.clone(),
+                db.groups.clone(),
+                db.sessions.clone(),
             )),
             store,
             db,

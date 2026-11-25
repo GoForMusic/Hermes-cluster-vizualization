@@ -81,9 +81,11 @@ fn alerts_can_be_resolved_and_listed_newest_first() {
 fn users_and_sessions() {
     let db = Repositories::sqlite_in_memory().unwrap();
     assert_eq!(db.users.count_users().unwrap(), 0);
-    let u = db.users.create_user("admin", "hash", "admin", 1).unwrap();
+    let u = db.users.create_user(&new_user("admin", "hash", 1)).unwrap();
     assert!(
-        db.users.create_user("admin", "other", "admin", 2).is_err(),
+        db.users
+            .create_user(&new_user("admin", "other", 2))
+            .is_err(),
         "usernames are unique"
     );
     assert_eq!(db.users.user_by_name("admin").unwrap().unwrap().id, u.id);
@@ -322,4 +324,15 @@ fn renaming_a_source_changes_only_its_name() {
         (got.name.as_str(), got.id.as_str(), got.secret.as_str()),
         ("right", "s1", "tok")
     );
+}
+
+fn new_user<'a>(name: &'a str, hash: &'a str, created: i64) -> NewUser<'a> {
+    NewUser {
+        username: name,
+        password_hash: hash,
+        role: "admin",
+        email: "",
+        break_glass: false,
+        created,
+    }
 }

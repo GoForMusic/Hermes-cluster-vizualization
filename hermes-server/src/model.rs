@@ -47,7 +47,7 @@ pub use source::{
 pub use source_view::SourceView;
 pub use upgrade_view::{UpgradeRequest, UpgradeView};
 pub use uptime::Uptime;
-pub use user::User;
+pub use user::{Group, GroupView, User, UserView};
 
 #[cfg(test)]
 #[path = "../tests/unit/model.rs"]

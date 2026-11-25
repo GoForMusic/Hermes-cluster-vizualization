@@ -303,6 +303,189 @@ async fn an_agent_reaches_a_hub_under_a_base_path_with_the_path_in_its_hub_url()
 }
 
 #[tokio::test]
+async fn the_admin_manages_accounts_and_groups_and_a_disabled_account_cannot_log_in() {
+    let rig = Rig::start().await;
+    // nobody is logged in: nothing about accounts is shown
+    assert_eq!(
+        rig.get("/api/users").await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    rig.setup_admin(false).await;
+
+    // the account the setup made is the break-glass one
+    let users: Value = rig.get("/api/users").await.json().await.unwrap();
+    assert_eq!(users[0]["username"], "admin");
+    assert_eq!(users[0]["breakGlass"], true);
+    assert!(!users.to_string().contains("argon2"), "{users}");
+
+    let made = rig
+        .post(
+            "/api/users",
+            json!({"username": "alice", "password": PASSWORD, "email": "alice@example.com"}),
+        )
+        .await;
+    assert_eq!(made.status(), StatusCode::CREATED);
+    let alice: Value = made.json().await.unwrap();
+    let id = alice["id"].as_i64().unwrap();
+    assert_eq!(
+        rig.post(
+            "/api/users",
+            json!({"username": "alice", "password": PASSWORD})
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        rig.post(
+            "/api/users",
+            json!({"username": "bobby", "password": "short"})
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // alice logs in with her own client: a second browser
+    let alice_http = Client::builder().cookie_store(true).build().unwrap();
+    let login = |http: &Client, pw: &str| {
+        http.post(rig.url("/api/auth/login"))
+            .header("X-Requested-With", "hermes")
+            .json(&json!({"username": "alice", "password": pw}))
+            .send()
+    };
+    assert_eq!(
+        login(&alice_http, PASSWORD).await.unwrap().status(),
+        StatusCode::OK
+    );
+    let me = || alice_http.get(rig.url("/api/auth/status")).send();
+    assert_eq!(
+        me().await.unwrap().json::<Value>().await.unwrap()["authenticated"],
+        true
+    );
+
+    // disabling ends her session at once and keeps her out
+    let off = rig
+        .send(
+            reqwest::Method::PATCH,
+            &format!("/api/users/{id}"),
+            json!({"disabled": true}),
+        )
+        .await;
+    assert_eq!(off.status(), StatusCode::OK);
+    assert_eq!(
+        me().await.unwrap().json::<Value>().await.unwrap()["authenticated"],
+        false
+    );
+    assert_eq!(
+        login(&alice_http, PASSWORD).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED,
+        "told the same as a wrong password"
+    );
+    rig.send(
+        reqwest::Method::PATCH,
+        &format!("/api/users/{id}"),
+        json!({"disabled": false}),
+    )
+    .await;
+    assert_eq!(
+        login(&alice_http, PASSWORD).await.unwrap().status(),
+        StatusCode::OK
+    );
+
+    // a password the admin sets works, the old one does not
+    rig.send(
+        reqwest::Method::PATCH,
+        &format!("/api/users/{id}"),
+        json!({"password": "a brand new password"}),
+    )
+    .await;
+    assert_eq!(
+        login(&alice_http, PASSWORD).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        login(&alice_http, "a brand new password")
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+
+    // groups
+    let g = rig
+        .post(
+            "/api/groups",
+            json!({"name": "ops", "description": "on call"}),
+        )
+        .await;
+    assert_eq!(g.status(), StatusCode::CREATED);
+    let gid = g.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let members = rig
+        .send(
+            reqwest::Method::PUT,
+            &format!("/api/groups/{gid}/members"),
+            json!({"users": [id]}),
+        )
+        .await;
+    assert_eq!(
+        members.json::<Value>().await.unwrap()["members"],
+        json!([id])
+    );
+    let users: Value = rig.get("/api/users").await.json().await.unwrap();
+    assert_eq!(users[1]["groups"], json!([gid]));
+    assert_eq!(
+        rig.post("/api/groups", json!({"name": "ops"}))
+            .await
+            .status(),
+        StatusCode::CONFLICT
+    );
+
+    // the rules: not your own account, never the break-glass one
+    let admin_id = users[0]["id"].as_i64().unwrap();
+    for body in [json!({"disabled": true}), json!({"password": PASSWORD})] {
+        let r = rig
+            .send(
+                reqwest::Method::PATCH,
+                &format!("/api/users/{admin_id}"),
+                body,
+            )
+            .await;
+        assert_eq!(r.status(), StatusCode::CONFLICT);
+    }
+    let del = rig
+        .send(
+            reqwest::Method::DELETE,
+            &format!("/api/users/{admin_id}"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(del.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        rig.send(reqwest::Method::DELETE, "/api/users/9999", json!({}))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+
+    // deleting her takes her out of the group; her session is gone
+    let del = rig
+        .send(
+            reqwest::Method::DELETE,
+            &format!("/api/users/{id}"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(del.status(), StatusCode::OK);
+    let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
+    assert_eq!(groups[0]["members"], json!([]));
+    assert_eq!(
+        me().await.unwrap().json::<Value>().await.unwrap()["authenticated"],
+        false
+    );
+}
+
+#[tokio::test]
 async fn the_first_visit_creates_the_admin_and_logs_them_in() {
     let rig = Rig::start().await;
     let status: Value = rig.get("/api/auth/status").await.json().await.unwrap();

@@ -51,6 +51,14 @@ Because the browser cannot speak gRPC, the hub also serves REST and Server-Sent 
 startup; nothing else in the hub knows which one is in use (`AppState.settings.tls_enabled` only affects whether the session cookie sets `Secure`
 without relying on an `X-Forwarded-Proto` header from a proxy that is not there).
 
+### Accounts and groups
+
+Settings → Users and Groups (`/api/users`, `/api/groups`, admin only; `AccessImp` in `services/access_imp.rs`). An account has a username, an optional
+email, and can be **disabled** (cannot log in, its sessions end at once) or **break-glass**: a local account with a password that is never disabled or
+deleted, with at least one always left, so a broken sign-in setup (an identity provider that is down) never locks everybody out. The account the first-run
+setup makes is break-glass, and so is the first account of a hub that was created before this existed. Nobody disables, deletes or resets their own account
+from the list. A group is a set of users; what a group may do comes with policies (next). Until then every account is an admin.
+
 ### Under a sub-path
 
 `HUB_BASE_PATH=/hermes` mounts everything (web app, REST, SSE, the agents' gRPC) under that path, for a proxy that routes `host/hermes` to the hub and

@@ -11,20 +11,40 @@ import { FederationSettings } from '../../federation/FederationSettings';
 import { useFederation } from '../../federation/useFederation';
 import { RegistryForm } from '../../registry/RegistryForm';
 import { PageHead } from '../PageHead';
+import { Account } from './Account';
+import { GroupsTab, UsersTab } from './Access';
 
 const Row = ({ title, desc, children }: { title: string; desc: string; children: ReactNode }) => (
   <div className="row"><div><b>{title}</b><span className="d">{desc}</span></div>{children}</div>
 );
 
-export function Settings() {
+const SECTIONS = [
+  { id: 'general', label: 'General' },
+  { id: 'users', label: 'Users' },
+  { id: 'groups', label: 'Groups' },
+  { id: 'profile', label: 'Profile' },
+] as const;
+
+/** `arg` is the section (`#/admin/settings/users`); nothing, or one that does not exist, is General. */
+export function Settings({ arg = '' }: { arg?: string }) {
+  const section = SECTIONS.find((s) => s.id === arg)?.id ?? 'general';
   return (
     <>
-      <PageHead title="Settings" />
-      <div className="settings-cols">
-        <section><TvSettings /></section>
-        <section><RegistrySettings /></section>
-      </div>
-      <FederationSettings />
+      <PageHead title="Settings">
+        {SECTIONS.map((s) => <a key={s.id} href={`#/admin/settings/${s.id}`} className={`pill${s.id === section ? ' on' : ''}`}>{s.label}</a>)}
+      </PageHead>
+      {section === 'general' ? (
+        <>
+          <div className="settings-cols">
+            <section><TvSettings /></section>
+            <section><RegistrySettings /></section>
+          </div>
+          <FederationSettings />
+        </>
+      ) : null}
+      {section === 'users' ? <UsersTab /> : null}
+      {section === 'groups' ? <GroupsTab /> : null}
+      {section === 'profile' ? <Account /> : null}
     </>
   );
 }

@@ -7,6 +7,7 @@
 //! plumbing the HTTP ones use, and the two routers (`routes` for the browsers, `agent_routes` for the agents) that wire
 //! their handlers to paths.
 
+mod access_controller;
 mod agent_controller;
 mod alerts_controller;
 mod auth_controller;
@@ -25,7 +26,7 @@ use axum::extract::{DefaultBodyLimit, FromRequestParts};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -104,6 +105,26 @@ pub fn routes(state: Shared) -> Router {
         .route("/api/alerts", get(alerts_controller::list_alerts))
         .route("/api/uptime", get(alerts_controller::uptime))
         // everything below changes something or shows source details: admin only
+        .route(
+            "/api/users",
+            get(access_controller::list_users).post(access_controller::create_user),
+        )
+        .route(
+            "/api/users/{id}",
+            patch(access_controller::update_user).delete(access_controller::delete_user),
+        )
+        .route(
+            "/api/groups",
+            get(access_controller::list_groups).post(access_controller::create_group),
+        )
+        .route(
+            "/api/groups/{id}",
+            patch(access_controller::update_group).delete(access_controller::delete_group),
+        )
+        .route(
+            "/api/groups/{id}/members",
+            put(access_controller::set_members),
+        )
         .route("/api/alerts/{id}/ack", post(alerts_controller::ack_alert))
         .route(
             "/api/sources",
@@ -205,6 +226,9 @@ fn link_user() -> User {
         password_hash: String::new(),
         role: "admin".into(),
         created: 0,
+        email: String::new(),
+        disabled: false,
+        break_glass: false,
     }
 }
 

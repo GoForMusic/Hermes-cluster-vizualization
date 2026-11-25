@@ -74,7 +74,7 @@ fn auth_error(e: AuthError) -> Response {
 
 /// Hashing takes a while and a lot of memory: off the async threads.
 #[allow(clippy::result_large_err)]
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, Response> {
     tokio::task::spawn_blocking(work).await.map_err(internal)

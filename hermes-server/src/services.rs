@@ -4,6 +4,7 @@
 //! everything else reads and pushes to browsers; `IGuard`/`GuardImp` keeps the same cluster from being shown twice. `judge` and
 //! `rule` are pure evaluation helpers `EngineImp` calls — no interface, since nothing is ever swapped in for a pure function.
 
+mod access_imp;
 mod auth_imp;
 mod comm_log_imp;
 mod engine_imp;
@@ -16,6 +17,7 @@ mod rule;
 mod store_imp;
 mod upgrade_service_imp;
 
+pub use access_imp::{AccessError, AccessImp, IAccess, UserChanges};
 pub use auth_imp::{AuthError, AuthImp, IAuth, SESSION_TTL_MS};
 pub use comm_log_imp::{CommLogImp, ICommLog, LogItem, NewEntry, SharedCommLog, describe_batch};
 pub use engine_imp::{EngineImp, IEngine};

@@ -97,6 +97,17 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       enable: (enabled) => send('PUT', '/api/comm-log', { enabled }),
       clear: () => send('DELETE', '/api/comm-log'),
     },
+    access: {
+      users: () => get('/api/users'),
+      createUser: (input) => call('POST', '/api/users', input),
+      updateUser: (id, patch) => call('PATCH', `/api/users/${id}`, patch),
+      deleteUser: (id) => send('DELETE', `/api/users/${id}`),
+      groups: () => get('/api/groups'),
+      createGroup: (input) => call('POST', '/api/groups', input),
+      updateGroup: (id, patch) => call('PATCH', `/api/groups/${id}`, patch),
+      deleteGroup: (id) => send('DELETE', `/api/groups/${id}`),
+      setMembers: (id, users) => call('PUT', `/api/groups/${id}/members`, { users }),
+    },
     uptime: {
       load: (span, buckets) => get(`/api/uptime?span=${span}&buckets=${buckets}`),
     },

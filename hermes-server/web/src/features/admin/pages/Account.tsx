@@ -1,9 +1,8 @@
-// The logged-in admin: change the password.
+// Settings → Profile: the logged-in user, and their password.
 import { useState } from 'react';
 import { useSession } from '../../../app/session';
 import { useClient } from '../../../state/context';
 import { useAsyncSubmit } from '../../../ui/hooks';
-import { PageHead } from '../PageHead';
 
 export function Account() {
   const client = useClient();
@@ -24,7 +23,6 @@ export function Account() {
 
   return (
     <>
-      <PageHead title="Account" />
       <div className="card" style={{ maxWidth: 480 }}>
         <h3>Signed in as {auth.username}</h3>
         <form className="form" onSubmit={submit}>
