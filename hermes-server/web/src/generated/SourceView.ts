@@ -15,6 +15,10 @@ expectedAgent?: string,
  */
 canUpgrade: boolean, 
 /**
+ * Some connected agent of this source was installed to read the logs of its containers.
+ */
+canLogs: boolean, 
+/**
  * The last version change that was asked for, and how it is going.
  */
 upgrade?: UpgradeView, 

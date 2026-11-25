@@ -318,7 +318,16 @@ pub async fn run_agent(
         }
     }
     let source_id = cfg.source_id.clone();
-    hermes_agentkit::run_with(cfg, None, move |sink: SharedSink| {
+    // `LOGS=1` (set by the install manifest when the admin allowed it): the hub may read the logs of this machine's containers
+    let logs: Option<hermes_agentkit::SharedLogs> = std::env::var("LOGS")
+        .is_ok_and(|v| !v.is_empty() && v != "0")
+        .then(|| {
+            Arc::new(crate::logs::DockerLogs::new(
+                Arc::new(Engine::new(connector_for(&socket))),
+                crate::logs::Mode::Docker,
+            )) as _
+        });
+    hermes_agentkit::run_with_logs(cfg, None, logs, move |sink: SharedSink| {
         let source_id = source_id.clone();
         let location = location.clone();
         let engine = Arc::new(Engine::new(connector_for(&socket)));
