@@ -33,7 +33,34 @@ nav = [
     "reference/configuration.md",
     "reference/architecture.md",
   ] },
-  { "Release notes" = "release-notes.md" },
+  { "Release notes" = [
+    "release-notes/index.md",
+    { "Hub" = [
+      "release-notes/hub/index.md",
+      "release-notes/hub/1.1.0.md",
+      "release-notes/hub/1.0.7.md",
+      "release-notes/hub/1.0.6.md",
+      "release-notes/hub/1.0.5.md",
+      "release-notes/hub/1.0.4.md",
+      "release-notes/hub/1.0.3.md",
+      "release-notes/hub/1.0.2.md",
+      "release-notes/hub/1.0.1.md",
+    ] },
+    { "Linux agent" = [
+      "release-notes/linux-agent/index.md",
+      "release-notes/linux-agent/1.1.0.md",
+      "release-notes/linux-agent/1.0.3.md",
+      "release-notes/linux-agent/1.0.2.md",
+      "release-notes/linux-agent/1.0.1.md",
+    ] },
+    { "Windows agent" = [
+      "release-notes/windows-agent/index.md",
+      "release-notes/windows-agent/1.1.0.md",
+      "release-notes/windows-agent/1.0.3.md",
+      "release-notes/windows-agent/1.0.2.md",
+      "release-notes/windows-agent/1.0.1.md",
+    ] },
+  ] },
 ]
 
 [project.theme]
