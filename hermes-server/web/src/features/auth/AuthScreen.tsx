@@ -4,6 +4,7 @@ import type { MemberCode } from '../../hub/HubClient';
 import { useClient } from '../../state/context';
 import { Brand } from '../../ui/brand';
 import { useAsyncSubmit } from '../../ui/hooks';
+import { hubAddress } from '../../hub/base';
 
 const Field = ({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) => (
   <label className="f">{label}{children}{hint ? <span className="muted" style={{ fontSize: 11.5 }}>{hint}</span> : null}</label>
@@ -13,7 +14,7 @@ export function AuthScreen({ mode, onDone, onMember }: { mode: 'setup' | 'login'
   const client = useClient();
   const setup = mode === 'setup';
   const [managed, setManaged] = useState(false); // first run: this hub will be managed by another one, so it gets no admin of its own
-  const [address, setAddress] = useState(location.origin);
+  const [address, setAddress] = useState(hubAddress());
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');

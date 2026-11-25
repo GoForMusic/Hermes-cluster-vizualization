@@ -5,8 +5,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
 use axum::http::{HeaderValue, header};
+use axum::response::{Html, IntoResponse, Response};
+use axum::routing::get;
+use axum::{Router, http::StatusCode};
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::warn;
@@ -22,6 +24,9 @@ use crate::services::{
 pub struct Settings {
     /// The directory with `index.html` and the rest of the web app.
     pub web: PathBuf,
+    /// Where the hub is mounted when a reverse proxy sends it only one sub-path and does not strip it (`HUB_BASE_PATH`, e.g. `/hermes`).
+    /// Empty = the root; otherwise it starts with `/` and does not end with one (see `normalize_base_path`).
+    pub base_path: String,
     /// The Linux agent image the generated install manifests point at.
     pub agent_image: String,
     /// Optional: the Windows agent image (Swarm only).
@@ -155,8 +160,17 @@ impl Hub {
 
     /// REST + SSE for the browsers, gRPC for the agents, and the web app, all on one port.
     pub fn router(&self) -> Router {
-        let files = ServeDir::new(&self.state.settings.web);
-        controller::routes(self.state.clone())
+        let web = self.state.settings.web.clone();
+        let base = self.state.settings.base_path.clone();
+        let files = ServeDir::new(&web).append_index_html_on_directories(false);
+        let page = {
+            let (web, base) = (web.clone(), base.clone());
+            get(move || index_page(web.clone(), base.clone()))
+        };
+        let slash = page.clone();
+        let router = controller::routes(self.state.clone())
+            .route("/", page.clone())
+            .route("/index.html", page)
             .merge(controller::agent_routes(
                 self.state.clone(),
                 self.state.ingest.clone(),
@@ -169,7 +183,15 @@ impl Hub {
             .layer(SetResponseHeaderLayer::if_not_present(
                 header::CACHE_CONTROL,
                 HeaderValue::from_static("no-store"),
-            ))
+            ));
+        if base.is_empty() {
+            router
+        } else {
+            // a nested `/` answers `/hermes` only: `/hermes/` is the same page, and the one people type
+            Router::new()
+                .route(&format!("{base}/"), slash)
+                .nest(&base, router)
+        }
     }
 
     /// Sources the hub reads itself (pull) need a collector of their own, and this hub has none yet. Say so, rather than pretend.
@@ -237,6 +259,42 @@ impl Hub {
                 auth.purge_expired();
             }
         });
+    }
+}
+
+/// `HUB_BASE_PATH` as the hub uses it: `""`, `"/"` and `" "` mean the root (empty); anything else becomes `/segment[/segment]` with no
+/// trailing slash. Letters, digits and `- _ . ~` only: the value ends up in HTML, in a cookie and in a route, so nothing else is allowed.
+pub fn normalize_base_path(raw: &str) -> Result<String, String> {
+    let segments: Vec<&str> = raw.split('/').filter(|s| !s.trim().is_empty()).collect();
+    for s in &segments {
+        if *s == "."
+            || *s == ".."
+            || !s
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.~".contains(c))
+        {
+            return Err(format!(
+                "HUB_BASE_PATH {raw:?} is not a plain path (use e.g. /hermes: letters, digits, - _ . ~ between slashes)"
+            ));
+        }
+    }
+    Ok(segments.iter().map(|s| format!("/{s}")).collect())
+}
+
+/// The web app's `index.html` with the base path put in: `<base href>` makes the relative asset URLs of the build resolve under it, and
+/// `window.__HUB_BASE__` is what the app puts in front of `/api`. Read on every request, so a rebuilt web app shows without a restart.
+async fn index_page(web: PathBuf, base: String) -> Response {
+    match tokio::fs::read_to_string(web.join("index.html")).await {
+        Ok(html) => {
+            let tag =
+                format!("<base href=\"{base}/\"><script>window.__HUB_BASE__=\"{base}\"</script>");
+            let html = match html.find("<head>") {
+                Some(at) => format!("{}{tag}{}", &html[..at + 6], &html[at + 6..]),
+                None => format!("{tag}{html}"),
+            };
+            Html(html).into_response()
+        }
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
 

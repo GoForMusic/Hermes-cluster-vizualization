@@ -20,6 +20,9 @@ persistence:
   existingClaim: ""
 
 hub:
+  # HUB_BASE_PATH: serve the hub under a sub-path (e.g. /hermes) when the ingress sends only that path and does not strip it.
+  # Empty = the root. Set `ingress.path` to the same value.
+  basePath: ""
   demo: false                  # HUB_DEMO: a development fixture, keep it off
   # Optional: images in the generated agent manifests (the Settings -> Registry page of the web app replaces these)
   agentImage: ""
@@ -35,6 +38,7 @@ service:
 
 ingress:
   enabled: false
+  path: ""                     # empty = hub.basePath, or / when that is empty too
   className: traefik
   host: hermes.example.com
   annotations:

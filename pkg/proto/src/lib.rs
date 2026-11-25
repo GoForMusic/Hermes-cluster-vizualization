@@ -1,5 +1,6 @@
 //! The gRPC contract between agents and the hub, generated from `proto/infraviz/v1/agent.proto` (agent <-> hub) and `federation.proto` (master hub <-> member hub).
 
+pub mod prefix;
 pub mod value;
 
 pub mod v1 {

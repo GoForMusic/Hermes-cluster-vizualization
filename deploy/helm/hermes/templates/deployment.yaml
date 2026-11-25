@@ -36,6 +36,9 @@ spec:
             - { name: HUB_ADDR, value: ":8080" }
             - { name: HUB_WEB, value: /web }
             - { name: HUB_DATA, value: /data }
+            {{- with .Values.hub.basePath }}
+            - { name: HUB_BASE_PATH, value: {{ . | quote }} }
+            {{- end }}
             - { name: HUB_DEMO, value: {{ ternary "1" "0" .Values.hub.demo | quote }} }
             - name: HUB_SECRET_KEY
               valueFrom:
@@ -52,10 +55,10 @@ spec:
             - { name: HUB_AGENT_PULL_SECRET, value: {{ . | quote }} }
             {{- end }}
           readinessProbe:
-            httpGet: { path: /api/health, port: http }
+            httpGet: { path: {{ .Values.hub.basePath }}/api/health, port: http }
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /api/health, port: http }
+            httpGet: { path: {{ .Values.hub.basePath }}/api/health, port: http }
             initialDelaySeconds: 10
             periodSeconds: 20
             failureThreshold: 3

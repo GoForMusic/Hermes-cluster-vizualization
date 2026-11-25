@@ -80,6 +80,8 @@ async fn main() -> Result<()> {
         db,
         Settings {
             web: web.clone().into(),
+            base_path: hermes_hub::app::normalize_base_path(&env("HUB_BASE_PATH", ""))
+                .map_err(anyhow::Error::msg)?,
             agent_image: env("HUB_AGENT_IMAGE", "hermes-agent-linux:dev"),
             agent_image_windows: env("HUB_AGENT_IMAGE_WINDOWS", ""),
             agent_pull_secret: env("HUB_AGENT_PULL_SECRET", ""),

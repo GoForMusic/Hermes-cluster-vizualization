@@ -23,3 +23,32 @@ fn incidents_are_kept_thirty_days_unless_the_admin_says_otherwise() {
     );
     assert_eq!(incident_days(Some(r#"{"incidentDays": 999999}"#)), 3650);
 }
+
+#[test]
+fn the_base_path_is_a_plain_path_or_the_root() {
+    for root in ["", "/", " ", "//", " / "] {
+        assert_eq!(normalize_base_path(root).unwrap(), "", "{root:?}");
+    }
+    for (raw, want) in [
+        ("/hermes", "/hermes"),
+        ("hermes", "/hermes"),
+        ("/hermes/", "/hermes"),
+        ("//a//b/", "/a/b"),
+        ("/infra-viz_2.0", "/infra-viz_2.0"),
+    ] {
+        assert_eq!(normalize_base_path(raw).unwrap(), want, "{raw:?}");
+    }
+    // it ends up in HTML, in a cookie and in a route: nothing that could break out of them
+    for bad in [
+        "/a b",
+        "/a\"b",
+        "/<script>",
+        "/a;b",
+        "/..",
+        "/a/../b",
+        "/a?x",
+        "/%2e",
+    ] {
+        assert!(normalize_base_path(bad).is_err(), "{bad:?}");
+    }
+}

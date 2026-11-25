@@ -10,11 +10,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+http = "1.5.0"
 prost = "0.14.4"
 prost-types = "0.14.4"
 serde_json = "1.0.151"
 tonic = "0.14.6"
 tonic-prost = "0.14.6"
+tower-service = "0.3.3"
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"

@@ -5,6 +5,7 @@ import type { MemberCode } from '../../hub/HubClient';
 import { useClient } from '../../state/context';
 import { Brand } from '../../ui/brand';
 import { errorText, useNow } from '../../ui/hooks';
+import { hubAddress } from '../../hub/base';
 
 /** How long until `at` (ms since the epoch), as "42 min" or "9 min". */
 const minutesLeft = (at: number, now: number): number => Math.max(0, Math.ceil((at - now) / 60_000));
@@ -48,7 +49,7 @@ export function PairingScreen({ member, first, onPaired, onCancel }: { member: M
         </div>
         <div className="pair-box">
           <span className="muted">Address of this hub</span>
-          <code className="pair-code small">{member.agentAddress || location.origin}</code>
+          <code className="pair-code small">{member.agentAddress || hubAddress()}</code>
           <span className="muted">also what the agents of this datacenter connect to</span>
         </div>
         <div className="err" role="alert">{error}</div>

@@ -8,6 +8,7 @@ import { Dialog } from '../../ui/dialog';
 import { errorText, useAsyncSubmit } from '../../ui/hooks';
 import { StatusChip } from '../../ui/status';
 import { useFederation } from './useFederation';
+import { hubAddress } from '../../hub/base';
 
 const STATE_CHIP = {
   connected: <StatusChip status="ok">Connected</StatusChip>,
@@ -175,7 +176,7 @@ function RemoveDatacenterDialog({ dc, onClose, onConfirm }: { dc: DatacenterView
 
 function BecomeMemberDialog({ open, onClose, onCode }: { open: boolean; onClose: () => void; onCode: (c: MemberCode) => Promise<void> }) {
   const client = useClient();
-  const [address, setAddress] = useState(location.origin);
+  const [address, setAddress] = useState(hubAddress());
   const { busy, error, submit } = useAsyncSubmit(async () => { await onCode(await client.federation.enableMember(address.trim())); });
   return (
     <Dialog open={open} onClose={onClose}>

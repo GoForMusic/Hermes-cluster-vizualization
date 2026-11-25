@@ -43,6 +43,7 @@ impl TlsRig {
             Repositories::sqlite_in_memory().unwrap(),
             Settings {
                 web: web.path().into(),
+                base_path: String::new(),
                 agent_image: "registry.example.com/agent:1.2.3".into(),
                 agent_image_windows: String::new(),
                 agent_pull_secret: String::new(),

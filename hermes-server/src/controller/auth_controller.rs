@@ -13,6 +13,7 @@ use super::{
     Admin, COOKIE_NAME, Shared, cookie, csrf_failed, csrf_ok, fail, internal, json_response, ok,
     parse,
 };
+use crate::app::Settings;
 use crate::model::AuthStatus;
 use crate::services::{AuthError, SESSION_TTL_MS};
 
@@ -20,16 +21,17 @@ use crate::services::{AuthError, SESSION_TTL_MS};
 /// terminates TLS itself and forwards plain HTTP.
 fn session_cookie(
     headers: &HeaderMap,
-    tls_enabled: bool,
+    settings: &Settings,
     token: &str,
 ) -> (HeaderName, HeaderValue) {
-    let secure = tls_enabled
+    let secure = settings.tls_enabled
         || headers
             .get("x-forwarded-proto")
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.eq_ignore_ascii_case("https"));
     let value = format!(
-        "{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}{}",
+        "{COOKIE_NAME}={token}; Path={}; HttpOnly; SameSite=Strict; Max-Age={}{}",
+        cookie_path(settings),
         SESSION_TTL_MS / 1000,
         if secure { "; Secure" } else { "" }
     );
@@ -39,13 +41,22 @@ fn session_cookie(
     )
 }
 
+/// The cookie belongs to the hub's own path, so a hub under `/hermes` does not send it to whatever else shares the host.
+fn cookie_path(settings: &Settings) -> &str {
+    if settings.base_path.is_empty() {
+        "/"
+    } else {
+        &settings.base_path
+    }
+}
+
 fn with_cookie(
     headers: &HeaderMap,
-    tls_enabled: bool,
+    settings: &Settings,
     token: &str,
     mut response: Response,
 ) -> Response {
-    let (name, value) = session_cookie(headers, tls_enabled, token);
+    let (name, value) = session_cookie(headers, settings, token);
     response.headers_mut().insert(name, value);
     response
 }
@@ -109,12 +120,12 @@ struct Credentials {
 /// (`login`/`setup`/`change_password` can fail with an `AuthError`, or the blocking task itself can panic) all become one `Response`.
 async fn login_response(
     headers: &HeaderMap,
-    tls_enabled: bool,
+    settings: &Settings,
     ok_body: Response,
     work: impl FnOnce() -> Result<String, AuthError> + Send + 'static,
 ) -> Response {
     match blocking(work).await {
-        Ok(Ok(token)) => with_cookie(headers, tls_enabled, &token, ok_body),
+        Ok(Ok(token)) => with_cookie(headers, settings, &token, ok_body),
         Ok(Err(e)) => auth_error(e),
         Err(r) => r,
     }
@@ -137,7 +148,7 @@ pub(super) async fn auth_setup(
     };
     let auth = st.auth.clone();
     let ok_body = json_response(StatusCode::CREATED, json!({"ok": true}));
-    login_response(&headers, st.settings.tls_enabled, ok_body, move || {
+    login_response(&headers, &st.settings, ok_body, move || {
         auth.setup(&c.username, &c.password, c.public_view)
     })
     .await
@@ -160,7 +171,7 @@ pub(super) async fn auth_login(
         Err(r) => return r,
     };
     let (auth, ip) = (st.auth.clone(), peer.ip().to_string());
-    login_response(&headers, st.settings.tls_enabled, ok(), move || {
+    login_response(&headers, &st.settings, ok(), move || {
         auth.login(&c.username, &c.password, &ip)
     })
     .await
@@ -176,7 +187,11 @@ pub(super) async fn auth_logout(State(st): State<Shared>, headers: HeaderMap) ->
     let mut response = ok();
     response.headers_mut().insert(
         header::SET_COOKIE,
-        HeaderValue::from_static("hermes_session=; Path=/; HttpOnly; Max-Age=0"),
+        HeaderValue::from_str(&format!(
+            "{COOKIE_NAME}=; Path={}; HttpOnly; Max-Age=0",
+            cookie_path(&st.settings)
+        ))
+        .expect("the base path is plain ASCII"),
     );
     response
 }
@@ -198,7 +213,7 @@ pub(super) async fn auth_password(
         Err(r) => return r,
     };
     let auth = st.auth.clone();
-    login_response(&headers, st.settings.tls_enabled, ok(), move || {
+    login_response(&headers, &st.settings, ok(), move || {
         auth.change_password(user.id, &change.current, &change.next)
     })
     .await

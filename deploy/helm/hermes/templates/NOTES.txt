@@ -1,6 +1,6 @@
 Hermes {{ .Chart.AppVersion }} installed.
 {{- if .Values.ingress.enabled }}
-Open https://{{ .Values.ingress.host }} and create the admin account.
+Open https://{{ .Values.ingress.host }}{{ .Values.hub.basePath }}/ and create the admin account.
 Agents connect to the same address (gRPC over TLS).
 {{- else }}
 Not exposed: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "hermes.name" . }} 8080:{{ .Values.service.port }}
