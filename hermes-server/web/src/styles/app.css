@@ -670,3 +670,25 @@ dialog h2 { margin: 0 0 14px; font-size: 18px; }
 .logline .tk-lvl-warn { color: var(--warn); font-weight: 700; }
 .logline .tk-lvl-error { color: var(--crit); font-weight: 700; }
 /* a line that is an error or a warning keeps its colour for the text that is nothing in particular */
+
+/* the colours a program wrote into its own log */
+.logline .ansi-black { color: #565f89; }
+.logline .ansi-red { color: #f7768e; }
+.logline .ansi-green { color: #9ece6a; }
+.logline .ansi-yellow { color: #e0af68; }
+.logline .ansi-blue { color: #7aa2f7; }
+.logline .ansi-magenta { color: #bb9af7; }
+.logline .ansi-cyan { color: #2ac3de; }
+.logline .ansi-white { color: #c0caf5; }
+.logline .ansi-bright-black { color: #7f8ea3; }
+.logline .ansi-bright-red { color: #ff7a93; }
+.logline .ansi-bright-green { color: #b9f27c; }
+.logline .ansi-bright-yellow { color: #ffc777; }
+.logline .ansi-bright-blue { color: #82aaff; }
+.logline .ansi-bright-magenta { color: #c099ff; }
+.logline .ansi-bright-cyan { color: #4fd6be; }
+.logline .ansi-bright-white { color: #ffffff; }
+.logline .ansi-bold { font-weight: 700; }
+.logline .ansi-dim { opacity: .65; }
+.logline .ansi-italic { font-style: italic; }
+.logline .ansi-underline { text-decoration: underline; }

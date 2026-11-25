@@ -247,3 +247,25 @@ describe('the colours of the log', () => {
     expect(screen.getByText('ERROR')).toHaveClass('tk-lvl-error');
   });
 });
+
+describe('the colours of the program', () => {
+  const E = '\u001b';
+  it('shows the colours that the program wrote, and none of the escapes', async () => {
+    await open({}, (h) => { h.logLines = [`${E}[2m2026-11-25T10:00:00Z${E}[0m ${E}[32m INFO${E}[0m uplink: connected`]; });
+    const info = await screen.findByText('INFO');
+    expect(info).toHaveClass('ansi-green');
+    expect(document.body.textContent).not.toContain('[2m');
+    expect(document.querySelector('.logline .tk-lvl-info')).toBeNull();
+  });
+
+  it('searches the text, not the escapes, and the Colours button shows it plain', async () => {
+    const user = userEvent.setup();
+    await open({}, (h) => { h.logLines = [`${E}[31mERR${E}[0mOR in the engine`]; });
+    await screen.findByText('ERR');
+    await user.type(screen.getByLabelText('Search the log'), 'error in');
+    expect(screen.getByText('1 of 1')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Colours' }));
+    expect(document.querySelectorAll('.logline [class^="ansi"]')).toHaveLength(0);
+    expect(document.body.textContent).not.toContain(E);
+  });
+});

@@ -1,6 +1,7 @@
 // The log of a container, in a panel at the bottom of the page (like the devtools of a browser): it stays open while the map is used above it.
 // The lines are streamed from the agent through the hub as they are read; nothing is kept, and closing the panel stops the reading.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ansiPieces, hasAnsi, stripAnsi } from '../../domain/ansi';
 import { highlight } from '../../domain/logSyntax';
 import { useClient } from '../../state/context';
 import { Icon } from '../../ui/icons';
@@ -23,7 +24,8 @@ const KEEP = 20_000;
 const SHOWN = 5_000;
 const TAILS = [100, 200, 500, 1000, 5000];
 
-const levelOf = (line: string): string => {
+const levelOf = (raw: string): string => {
+  const line = stripAnsi(raw);
   if (/\b(ERROR|FATAL|PANIC|CRITICAL|Exception)\b/i.test(line)) return 'lg-err';
   if (/\bWARN(ING)?\b/i.test(line)) return 'lg-warn';
   return '';
@@ -63,7 +65,7 @@ export function LogDock({ target, onClose }: { target: LogTarget; onClose: () =>
   }, [client, target.source, target.namespace, target.name, target.task, container, tail, follow, previous, timestamps]);
 
   const text = query.trim().toLowerCase();
-  const matching = useMemo(() => (text ? lines.filter((l) => l.toLowerCase().includes(text)) : lines), [lines, text]);
+  const matching = useMemo(() => (text ? lines.filter((l) => stripAnsi(l).toLowerCase().includes(text)) : lines), [lines, text]);
   const shown = matching.length > SHOWN ? matching.slice(matching.length - SHOWN) : matching;
 
   useLayoutEffect(() => {
@@ -85,7 +87,7 @@ export function LogDock({ target, onClose }: { target: LogTarget; onClose: () =>
   };
 
   const download = () => {
-    const blob = new Blob([`${lines.join('\n')}\n`], { type: 'text/plain' });
+    const blob = new Blob([`${lines.map(stripAnsi).join('\n')}\n`], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${target.name}${container ? `-${container}` : ''}${previous ? '-previous' : ''}.log`;
@@ -135,10 +137,12 @@ export function LogDock({ target, onClose }: { target: LogTarget; onClose: () =>
 /** One line: coloured by what its parts are (see `highlight`), with what was searched for marked inside the colours. */
 function Line({ line, text, colours }: { line: string; text: string; colours: boolean }) {
   if (!line) return <> </>;
-  if (!colours) return text ? <Marked line={line} text={text} /> : <>{line}</>;
+  const ansi = hasAnsi(line);
+  // a program that colours its own log is believed: its colours are shown and ours are not
+  if (!colours) { const plain = stripAnsi(line); return text ? <Marked line={plain} text={text} /> : <>{plain}</>; }
   return (
     <>
-      {highlight(line).map((p, i) => (p.kind ? <span key={i} className={p.kind}>{text ? <Marked line={p.text} text={text} /> : p.text}</span> : <Fragment key={i}>{text ? <Marked line={p.text} text={text} /> : p.text}</Fragment>))}
+      {(ansi ? ansiPieces(line) : highlight(line)).map((p, i) => (p.kind ? <span key={i} className={p.kind}>{text ? <Marked line={p.text} text={text} /> : p.text}</span> : <Fragment key={i}>{text ? <Marked line={p.text} text={text} /> : p.text}</Fragment>))}
     </>
   );
 }
