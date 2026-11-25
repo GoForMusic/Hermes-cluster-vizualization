@@ -1880,6 +1880,11 @@ impl ILogs for PodLogs {
 impl Rig {
     /// A cluster reader that can read logs, connected: its source id.
     async fn source_with_logs(&self) -> (String, PodLogs) {
+        self.source_with_logs_and(vec![]).await
+    }
+
+    /// The same, and `more` is in its topology.
+    async fn source_with_logs_and(&self, more: Vec<Node>) -> (String, PodLogs) {
         let (id, token) = self
             .add_source_named("Kubernetes (agent)", "pod reader")
             .await;
@@ -1892,7 +1897,9 @@ impl Rig {
             asked: logs.asked.clone(),
         };
         let agent = self.agent(&id, &token).with_logs(Arc::new(logs));
-        agent.set_topology(vec![cluster(&id)], vec![]);
+        let mut nodes = vec![cluster(&id)];
+        nodes.extend(more);
+        agent.set_topology(nodes, vec![]);
         tokio::spawn(agent.run());
         eventually("the agent that reads logs is connected", || async {
             {
@@ -2080,4 +2087,98 @@ async fn who_may_read_which_log_is_a_matter_of_policy() {
     );
     // reading the log does not give the right to anything else
     assert_eq!(status("/api/users".into()).await, StatusCode::FORBIDDEN);
+}
+
+fn crashing_pod(source: &str) -> Vec<Node> {
+    let host = format!("{source}:n:h1");
+    let pod = |name: &str, own: Own| Node {
+        id: format!("{source}:p:{name}"),
+        kind: NodeKind::Workload.into(),
+        name: name.into(),
+        parent: Some(host.clone()),
+        provider: Provider::Kubernetes.into(),
+        own: own.into(),
+        reason: if own == Own::Crit {
+            "CrashLoopBackOff".into()
+        } else {
+            String::new()
+        },
+        meta: Some(hermes_proto::value::struct_from_json(
+            json!({"type": "Pod", "ns": "shop", "restarts": 3, "image": "x"}),
+        )),
+        ..Default::default()
+    };
+    vec![
+        Node {
+            id: format!("{source}:n:h1"),
+            kind: NodeKind::Host.into(),
+            name: "h1".into(),
+            parent: Some(source.into()),
+            provider: Provider::Kubernetes.into(),
+            own: Own::Ok.into(),
+            ..Default::default()
+        },
+        pod("web-1", Own::Crit),
+        pod("fine-1", Own::Ok),
+    ]
+}
+
+#[tokio::test]
+async fn an_alert_on_a_pod_keeps_the_last_lines_of_its_log_for_the_incident_report() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let source = {
+        // the id is only known after the source is added: the topology is made from it
+        let (id, token) = rig
+            .add_source_named("Kubernetes (agent)", "pod reader")
+            .await;
+        let logs = PodLogs {
+            stopped: Arc::default(),
+            asked: Arc::default(),
+        };
+        let asked = logs.asked.clone();
+        let agent = rig.agent(&id, &token).with_logs(Arc::new(logs));
+        let mut nodes = vec![cluster(&id)];
+        nodes.extend(crashing_pod(&id));
+        agent.set_topology(nodes, vec![]);
+        tokio::spawn(agent.run());
+        (id, asked)
+    };
+    let (id, asked) = source;
+    eventually("the alert has the log", || async {
+        let alerts = rig.get("/api/alerts").await.json::<Value>().await.unwrap();
+        alerts.as_array().unwrap().iter().any(|a| {
+            a["nodeId"]
+                .as_str()
+                .is_some_and(|n| n.ends_with(":p:web-1"))
+                && a["logs"].as_str().is_some_and(|l| l.contains("starting"))
+        })
+    })
+    .await;
+    let alerts = rig.get("/api/alerts").await.json::<Value>().await.unwrap();
+    let alert = alerts
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["nodeId"] == format!("{id}:p:web-1"))
+        .unwrap();
+    let logs = alert["logs"].as_str().unwrap();
+    assert!(
+        logs.starts_with("── before the last restart ──\n"),
+        "it restarted three times: the log before is kept first\n{logs}"
+    );
+    assert!(
+        logs.contains("previous=true tail=200")
+            && logs.contains("── since ──")
+            && logs.contains("previous=false tail=200"),
+        "{logs}"
+    );
+    // only the pod in trouble was read, and nothing but what the alert needs
+    assert!(
+        asked
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|q| q.name == "web-1" && q.namespace == "shop")
+    );
 }

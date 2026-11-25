@@ -253,6 +253,11 @@ impl Hub {
     /// The rules engine, the watch for silent agents and the purge of expired sessions, until the process ends.
     pub fn spawn_background(&self) {
         self.state.links.start_all();
+        tokio::spawn(crate::services::capture_logs(
+            self.state.db.alerts.clone(),
+            self.state.store.clone(),
+            self.state.logs.clone(),
+        ));
         let rules = self.state.rules.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(1));

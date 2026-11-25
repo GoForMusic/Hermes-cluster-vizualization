@@ -36,6 +36,8 @@ pub trait IAlertDAO: Send + Sync {
     /// node looked like at the moment the alert opened, not a running record of its latest state.
     fn insert_alert(&self, a: &mut Alert) -> Result<()>;
     fn update_alert(&self, a: &Alert) -> Result<()>;
+    /// Writes the log that was taken for the alert. Like the snapshot, it is written once and `update_alert` leaves it alone.
+    fn set_alert_logs(&self, id: i64, logs: &str) -> Result<()>;
     fn list_alerts(&self, limit: i64) -> Result<Vec<Alert>>;
     fn active_alerts(&self) -> Result<Vec<Alert>>;
     fn get_alert(&self, id: i64) -> Result<Option<Alert>>;
@@ -54,7 +56,7 @@ impl AlertDAOImp {
 
     fn alerts(&self, where_and_order: &str, args: impl rusqlite::Params) -> Result<Vec<Alert>> {
         let conn = self.ctx.conn();
-        let mut stmt = conn.prepare(&format!("SELECT id,key,sev,node_id,title,detail,ts,resolved_ts,ack,snapshot,ack_by,ack_ts FROM alerts {where_and_order}"))?;
+        let mut stmt = conn.prepare(&format!("SELECT id,key,sev,node_id,title,detail,ts,resolved_ts,ack,snapshot,ack_by,ack_ts,logs FROM alerts {where_and_order}"))?;
         let rows = stmt.query_map(args, |r| {
             Ok(Alert {
                 id: r.get(0)?,
@@ -69,6 +71,7 @@ impl AlertDAOImp {
                 snapshot: r.get(9)?,
                 ack_by: r.get(10)?,
                 ack_ts: r.get(11)?,
+                logs: r.get(12)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -91,6 +94,13 @@ impl IAlertDAO for AlertDAOImp {
             "UPDATE alerts SET sev=?1, title=?2, detail=?3, resolved_ts=?4, ack=?5, ack_by=?6, ack_ts=?7 WHERE id=?8",
             params![a.sev, a.title, a.detail, a.resolved_ts, a.ack, a.ack_by, a.ack_ts, a.id],
         )?;
+        Ok(())
+    }
+
+    fn set_alert_logs(&self, id: i64, logs: &str) -> Result<()> {
+        self.ctx
+            .conn()
+            .execute("UPDATE alerts SET logs=?1 WHERE id=?2", params![logs, id])?;
         Ok(())
     }
 

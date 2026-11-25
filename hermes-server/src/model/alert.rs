@@ -40,4 +40,9 @@ pub struct Alert {
     /// captured once and never updated: the node itself may be gone by the time someone looks back at this. Empty for alerts that
     /// were never tied to one node's state (a whole source being unreachable) or opened before this existed.
     pub snapshot: String,
+    /// The last lines of the log of the container, taken when the alert opened (and while the source lets the hub read logs): the container may be
+    /// gone, with its log, by the time someone looks back at this. Empty when there was nothing to read, or it was not allowed.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    #[ts(as = "Option<String>", optional)]
+    pub logs: String,
 }
