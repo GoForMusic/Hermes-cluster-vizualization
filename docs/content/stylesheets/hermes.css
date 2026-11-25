@@ -1,0 +1,40 @@
+/* The look of the HERMES HUD: near-black, one gold accent, mono for code. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono&display=swap");
+
+:root,
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #121821;
+  --md-primary-bg-color: #e8edf4;
+  --md-accent-fg-color: #f2b544;
+  --md-default-bg-color: #0b0f14;
+  --md-default-fg-color: #dde3ec;
+  --md-default-fg-color--light: #9aa6b6;
+  --md-typeset-a-color: #f2b544;
+  --md-code-bg-color: #121821;
+  --md-code-fg-color: #dde3ec;
+  --md-text-font: "Inter";
+  --md-code-font: "IBM Plex Mono";
+}
+
+.md-header, .md-tabs { background-color: #0b0f14; border-bottom: 1px solid #1d2733; box-shadow: none; }
+.md-header__button.md-logo img { height: 1.8rem; }
+.md-nav__link--active, .md-tabs__link--active { color: #f2b544; }
+.md-typeset h1, .md-typeset h2 { font-weight: 600; letter-spacing: .01em; }
+.md-typeset h2 { border-bottom: 1px solid #1d2733; padding-bottom: .3rem; }
+
+/* square, like the app: no rounded corners on buttons, images, code, tables */
+.md-typeset .md-button { border-radius: 0; border: 1px solid #2a3646; color: #dde3ec; }
+.md-typeset .md-button--primary { background: #f2b544; border-color: #f2b544; color: #0b0f14; font-weight: 600; }
+.md-typeset .md-button:hover { border-color: #f2b544; color: #f2b544; }
+.md-typeset .md-button--primary:hover { color: #0b0f14; background: #ffc95e; }
+.md-typeset img { border: 1px solid #1d2733; border-radius: 0; }
+.md-typeset pre > code, .md-typeset table:not([class]) { border-radius: 0; }
+.md-typeset table:not([class]) { border: 1px solid #1d2733; background: #0e1319; }
+.md-typeset table:not([class]) th { background: #121821; color: #f2b544; }
+.md-typeset .admonition, .md-typeset details { border-radius: 0; background: #0e1319; }
+
+.hero { text-align: center; padding: 2rem 0 1rem; }
+.hero .hero-logo { border: 0; max-width: 360px; margin: 0 auto; }
+.hero p { font-size: 1.1rem; }
+.grid.cards > ul > li { border-radius: 0; border: 1px solid #1d2733; background: #0e1319; }
+.grid.cards > ul > li:hover { border-color: #f2b544; }

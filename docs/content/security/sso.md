@@ -2,7 +2,11 @@
 
 People can sign in at the identity provider of their company (OpenID Connect: Microsoft Entra ID, Google, Keycloak, Okta, ...) instead of with a password.
 Settings → Single sign-on. The provider says **who** a person is; **what** they may do is decided here, by the policies of the groups they are in
-(see "Groups and policies" in [architecture.md](architecture.md)).
+([Users, groups and policies](access.md)).
+
+![The provider form: issuer, client, claims and the group mapping](../assets/img/sso-provider.jpg)
+
+![The login page with the provider's button next to the break-glass login](../assets/img/login-sso.jpg)
 
 ## Microsoft Entra ID
 

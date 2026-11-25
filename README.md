@@ -10,20 +10,22 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 
+<p align="center"><b><a href="https://goformusic.github.io/Hermes-cluster-vizualization/">Documentation</a></b> · <a href="https://goformusic.github.io/Hermes-cluster-vizualization/how-to-start/">How to start</a> · <a href="https://goformusic.github.io/Hermes-cluster-vizualization/reference/api/">API</a></p>
+
 A live map of your Kubernetes and Docker Swarm (soon Nomad) clusters: hosts, workloads, volumes, traffic and incidents,
 with a read-only wallboard for a TV on the LAN and an admin panel. Problems show up the moment they happen.
 
 <p align="center">
-  <img src="docs/images/tv.jpg" alt="HERMES TV wallboard: all clusters, hosts, workloads and traffic on one map" width="49%">
-  <img src="docs/images/tv-cluster.jpg" alt="HERMES TV wallboard zoomed into one cluster: Ingress -&gt; Service -&gt; pods, with live traffic" width="49%">
+  <img src="docs/content/assets/img/tv.jpg" alt="HERMES TV wallboard: all clusters, hosts, workloads and traffic on one map" width="49%">
+  <img src="docs/content/assets/img/tv-cluster.jpg" alt="HERMES TV wallboard zoomed into one cluster: Ingress -&gt; Service -&gt; pods, with live traffic" width="49%">
 </p>
 <p align="center">
-  <img src="docs/images/admin.jpg" alt="HERMES admin dashboard: a host's CPU/memory, 7-day uptime bar and recent events" width="32%">
-  <img src="docs/images/topology.jpg" alt="HERMES admin topology page: the same live map, click-to-inspect" width="32%">
-  <img src="docs/images/incident-report.jpg" alt="HERMES incident report: what happened, since when, what else was affected" width="32%">
+  <img src="docs/content/assets/img/admin.jpg" alt="HERMES admin dashboard: a host's CPU/memory, 7-day uptime bar and recent events" width="32%">
+  <img src="docs/content/assets/img/topology.jpg" alt="HERMES admin topology page: the same live map, click-to-inspect" width="32%">
+  <img src="docs/content/assets/img/incident-report.jpg" alt="HERMES incident report: what happened, since when, what else was affected" width="32%">
 </p>
 <p align="center">
-  <img src="docs/images/admin-logs.jpg" alt="HERMES communication log: every agent batch, admin-only and off by default" width="80%">
+  <img src="docs/content/assets/img/admin-logs.jpg" alt="HERMES communication log: every agent batch, admin-only and off by default" width="80%">
 </p>
 
 The TV wallboard (`#/tv`) has a second, simpler view (`#/tv/status`): one uptime bar per host, Uptime-Kuma style, for a screen that only needs a yes/no.
@@ -51,7 +53,7 @@ hermes-server/
   Dockerfile
 agent-linux/            the agent: node mode (CRI), Kubernetes collector, Swarm collector; Dockerfile
 agent-windows/          the agent for Windows Swarm nodes: main, kernel32 CPU/memory; Dockerfile
-docs/                   architecture notes; federation.md (a hub that manages another hub, for networks where only one direction is open)
+docs/                   the documentation site (Zensical): docs/zensical.toml and the Markdown in docs/content
 .github/workflows/      CI and publish pipelines
 .devcontainer/          Rust + Node + protoc, run from VS Code with Docker
 Cargo.toml              ONE Cargo workspace for everything
@@ -87,10 +89,10 @@ echo "HUB_SECRET_KEY=$(openssl rand -hex 32)" > .env    # encrypts credentials (
 docker compose up -d --build        # http://localhost:8765  (PORT=9000 to change)
 ```
 
-To try it without compiling anything, run the published image instead (`HERMES_VERSION` is a release tag, for example `1.0.7`; Docker Compose 2.24+):
+To try it without compiling anything, run the published image instead (`HERMES_VERSION` is a release tag, for example `1.1.0`; Docker Compose 2.24+):
 
 ```bash
-echo "HERMES_VERSION=1.0.7" >> .env
+echo "HERMES_VERSION=1.1.0" >> .env
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 

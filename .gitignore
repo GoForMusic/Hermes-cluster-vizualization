@@ -23,3 +23,4 @@ agent-windows/agent.exe
 hermes-server/web/coverage/
 hermes-server/web/junit.xml
 __pycache__/
+docs/site/

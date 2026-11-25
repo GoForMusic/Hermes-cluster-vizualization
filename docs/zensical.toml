@@ -1,0 +1,68 @@
+[project]
+site_name = "HERMES"
+site_description = "A live map of Kubernetes, Docker Swarm and Docker: what runs where, and what just broke."
+site_author = "GoForMusic"
+site_url = "https://goformusic.github.io/Hermes-cluster-vizualization/"
+repo_url = "https://github.com/GoForMusic/Hermes-cluster-vizualization"
+repo_name = "GoForMusic/Hermes-cluster-vizualization"
+docs_dir = "content"
+site_dir = "site"
+copyright = "Copyright &copy; GoForMusic"
+extra_css = ["stylesheets/hermes.css"]
+
+nav = [
+  { "Home" = "index.md" },
+  { "How to start" = "how-to-start.md" },
+  { "Install" = [
+    "install/hub.md",
+    "install/agents.md",
+    "install/federation.md",
+  ] },
+  { "Using HERMES" = [
+    "using/interface.md",
+    "using/logs.md",
+  ] },
+  { "Security" = [
+    "security/access.md",
+    "security/policies.md",
+    "security/teams.md",
+    "security/sso.md",
+  ] },
+  { "Reference" = [
+    "reference/api.md",
+    "reference/configuration.md",
+    "reference/architecture.md",
+  ] },
+  { "Release notes" = "release-notes.md" },
+]
+
+[project.theme]
+variant = "modern"
+logo = "assets/hermes-favicon-128.png"
+favicon = "assets/hermes-favicon-128.png"
+features = [
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.footer",
+  "content.code.copy",
+  "content.tabs.link",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [{ name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.tables]
+[project.markdown_extensions.toc]
+permalink = true

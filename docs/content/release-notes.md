@@ -1,0 +1,31 @@
+# Release notes
+
+## 1.1.0
+
+A large release: the hub now knows who is asking.
+
+**Access**
+
+- Users, groups and Vault-style **policies**; seeded `owners`, `viewers` and `everyone`; break-glass accounts. [Access](security/access.md), [Policies](security/policies.md)
+- A team sees only its own cluster (`clusters/<id>`), on the server: the live stream, alerts, uptime and sources are filtered. The wallboard can show every cluster. [Teams](security/teams.md)
+- **Single sign-on** (OpenID Connect, authorization code with PKCE): Entra ID, Google, Keycloak, Okta; group mapping; account linking by email. [SSO](security/sso.md)
+- **Session lifetime** and idle logout, in Settings → Security.
+- The admin panel offers only what the person's policies allow.
+
+**Logs**
+
+- Container and pod logs in a panel in the topology, **Previous**, search, download, colours for times, levels and ANSI. Opt-in per source. [Logs](using/logs.md)
+- The last lines of a crashing container are **kept with the alert** and shown in the incident report.
+
+**Deployment**
+
+- `HUB_BASE_PATH` / `HUB_PUBLIC_URL`: the hub under a sub-path of a proxy. [Install](install/hub.md)
+
+**Breaking changes**
+
+- Every API path is now judged by the caller's policies: a script needs a login whose groups name the path.
+- Old names and old installs are not given fallbacks: the names are the new ones everywhere.
+
+## Earlier
+
+Federation of hubs, the agent registry and in-dashboard agent upgrades, incident reports, Docker (one machine) sources: see the git history and the tags.
