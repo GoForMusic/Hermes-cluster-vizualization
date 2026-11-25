@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use std::sync::{Arc, Mutex};
 
-use hermes_agentkit::{Config, ISink, IUpgrader, Timing, UpgradeOutcome, Uplink};
+use hermes_agentkit::{
+    Config, ILogs, ISink, IUpgrader, LogError, LogQuery, Timing, UpgradeOutcome, Uplink,
+};
 use hermes_hub::app::{Hub, Settings};
 use hermes_hub::database::Repositories;
 use hermes_proto::v1::{Node, NodeKind, Own, Provider};
@@ -1823,4 +1825,917 @@ async fn a_second_source_with_the_name_of_another_is_refused_in_any_case() {
         )
         .await;
     assert_eq!(other.status(), StatusCode::CREATED);
+}
+
+// ---- logs ------------------------------------------------------------------------------------------------------
+
+/// What the agent of a cluster that allows logs says: a few lines for a pod, an endless log for another, nothing for a pod that is not there.
+struct PodLogs {
+    stopped: Arc<Mutex<Vec<String>>>,
+    asked: Arc<Mutex<Vec<LogQuery>>>,
+}
+
+#[tonic::async_trait]
+impl ILogs for PodLogs {
+    async fn read(
+        &self,
+        q: LogQuery,
+        out: tokio::sync::mpsc::Sender<Vec<String>>,
+    ) -> Result<(), LogError> {
+        self.asked.lock().unwrap().push(q.clone());
+        match q.name.as_str() {
+            "ghost" => Err(LogError::NotHere(format!(
+                "pod {}/ghost not found",
+                q.namespace
+            ))),
+            "endless" => {
+                struct Note(Arc<Mutex<Vec<String>>>);
+                impl Drop for Note {
+                    fn drop(&mut self) {
+                        self.0.lock().unwrap().push("stopped".into());
+                    }
+                }
+                let _note = Note(self.stopped.clone());
+                loop {
+                    if out.send(vec!["tick".into()]).await.is_err() {
+                        return Ok(());
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+            _ => {
+                let _ = out
+                    .send(vec![
+                        "starting".into(),
+                        format!("previous={} tail={}", q.previous, q.tail),
+                    ])
+                    .await;
+                let _ = out.send(vec!["ready".into()]).await;
+                Ok(())
+            }
+        }
+    }
+}
+
+impl Rig {
+    /// A cluster reader that can read logs, connected: its source id.
+    async fn source_with_logs(&self) -> (String, PodLogs) {
+        self.source_with_logs_and(vec![]).await
+    }
+
+    /// The same, and `more` is in its topology.
+    async fn source_with_logs_and(&self, more: Vec<Node>) -> (String, PodLogs) {
+        let (id, token) = self
+            .add_source_named("Kubernetes (agent)", "pod reader")
+            .await;
+        let logs = PodLogs {
+            stopped: Arc::default(),
+            asked: Arc::default(),
+        };
+        let seen = PodLogs {
+            stopped: logs.stopped.clone(),
+            asked: logs.asked.clone(),
+        };
+        let agent = self.agent(&id, &token).with_logs(Arc::new(logs));
+        let mut nodes = vec![cluster(&id)];
+        nodes.extend(more);
+        agent.set_topology(nodes, vec![]);
+        tokio::spawn(agent.run());
+        eventually("the agent that reads logs is connected", || async {
+            {
+                let list = self
+                    .get("/api/sources")
+                    .await
+                    .json::<Value>()
+                    .await
+                    .unwrap();
+                list.as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|s| s["id"] == id && s["canLogs"] == true)
+            }
+        })
+        .await;
+        (id, seen)
+    }
+}
+
+#[tokio::test]
+async fn the_log_of_a_pod_is_streamed_to_the_browser_and_ends() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (id, agent) = rig.source_with_logs().await;
+    let r = rig
+        .get(&format!(
+            "/api/logs/{id}/shop/web-1?tail=3&previous=true&container=app"
+        ))
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(r.headers()["content-type"], "text/event-stream");
+    let body = r.text().await.unwrap();
+    assert!(
+        body.contains(r#"data: {"lines":["starting","previous=true tail=3"]}"#),
+        "{body}"
+    );
+    assert!(body.contains(r#"data: {"lines":["ready"]}"#), "{body}");
+    assert!(body.contains("event: end"), "{body}");
+    let asked = agent.asked.lock().unwrap().clone();
+    assert_eq!(
+        (
+            asked[0].namespace.as_str(),
+            asked[0].name.as_str(),
+            asked[0].container.as_str(),
+            asked[0].previous
+        ),
+        ("shop", "web-1", "app", true)
+    );
+}
+
+#[tokio::test]
+async fn what_cannot_be_read_says_why() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    // a source that no agent of reads logs for: told how to change that
+    let (plain, token) = rig.add_source("Docker Swarm (agent)").await;
+    let agent = rig.agent(&plain, &token);
+    agent.set_topology(vec![cluster(&plain)], vec![]);
+    tokio::spawn(agent.run());
+    eventually("connected", || async {
+        rig.get("/api/sources").await.json::<Value>().await.unwrap()[0]["state"] == "connected"
+    })
+    .await;
+    let r = rig.get(&format!("/api/logs/{plain}/shop/web-1")).await;
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+    assert!(
+        r.json::<Value>().await.unwrap()["error"]
+            .as_str()
+            .unwrap()
+            .contains("Allow reading container logs")
+    );
+    assert_eq!(
+        rig.get("/api/logs/nope/shop/web-1").await.status(),
+        StatusCode::NOT_FOUND
+    );
+
+    let (id, _) = rig.source_with_logs().await;
+    let ghost = rig.get(&format!("/api/logs/{id}/shop/ghost")).await;
+    assert_eq!(ghost.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        ghost.json::<Value>().await.unwrap()["error"],
+        "pod shop/ghost not found"
+    );
+    // what is not the name of a workload
+    for bad in ["shop", "shop/web/extra", "shop/%00x"] {
+        assert_eq!(
+            rig.get(&format!("/api/logs/{id}/{bad}")).await.status(),
+            StatusCode::BAD_REQUEST,
+            "{bad}"
+        );
+    }
+    // not logged in
+    assert_eq!(
+        Client::new()
+            .get(rig.url(&format!("/api/logs/{id}/shop/web-1")))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn a_followed_log_stops_at_the_agent_when_the_browser_leaves() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (id, agent) = rig.source_with_logs().await;
+    let mut r = rig
+        .get(&format!("/api/logs/{id}/shop/endless?follow=true"))
+        .await;
+    let mut seen = String::new();
+    while !seen.contains("tick") {
+        seen.push_str(&String::from_utf8_lossy(
+            &tokio::time::timeout(Duration::from_secs(5), r.chunk())
+                .await
+                .expect("no line")
+                .unwrap()
+                .unwrap(),
+        ));
+    }
+    drop(r);
+    eventually("the agent stopped reading", || async {
+        !agent.stopped.lock().unwrap().is_empty()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn who_may_read_which_log_is_a_matter_of_policy() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let (id, _) = rig.source_with_logs().await;
+    let (dev, dev_id) = user_client(&rig, "devon").await;
+    let path = |ns: &str, name: &str| format!("/api/logs/{id}/{ns}/{name}");
+    let status = |p: String| {
+        let dev = dev.clone();
+        let url = rig.url(&p);
+        async move { dev.get(url).send().await.unwrap().status() }
+    };
+    assert_eq!(
+        status(path("shop", "web-1")).await,
+        StatusCode::FORBIDDEN,
+        "in no group: nothing"
+    );
+
+    // a policy for this namespace of this source, and a secret pod that stays closed
+    let hcl = format!(
+        "path \"logs/{id}/shop/*\" {{\n capabilities = [\"read\"]\n}}\npath \"logs/{id}/shop/secret-*\" {{\n capabilities = [\"deny\"]\n}}\n"
+    );
+    let made = rig
+        .post("/api/policies", json!({"name": "shop-logs", "hcl": hcl}))
+        .await;
+    let policy = made.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let group = rig
+        .post("/api/groups", json!({"name": "shop-devs"}))
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{group}/policies"),
+        json!({"policies": [policy]}),
+    )
+    .await;
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{group}/members"),
+        json!({"users": [dev_id]}),
+    )
+    .await;
+    assert_eq!(status(path("shop", "web-1")).await, StatusCode::OK);
+    assert_eq!(
+        status(path("shop", "secret-keys")).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status(path("billing", "web-1")).await,
+        StatusCode::FORBIDDEN,
+        "another namespace"
+    );
+    // reading the log does not give the right to anything else
+    assert_eq!(status("/api/users".into()).await, StatusCode::FORBIDDEN);
+}
+
+fn crashing_pod(source: &str) -> Vec<Node> {
+    let host = format!("{source}:n:h1");
+    let pod = |name: &str, own: Own| Node {
+        id: format!("{source}:p:{name}"),
+        kind: NodeKind::Workload.into(),
+        name: name.into(),
+        parent: Some(host.clone()),
+        provider: Provider::Kubernetes.into(),
+        own: own.into(),
+        reason: if own == Own::Crit {
+            "CrashLoopBackOff".into()
+        } else {
+            String::new()
+        },
+        meta: Some(hermes_proto::value::struct_from_json(
+            json!({"type": "Pod", "ns": "shop", "restarts": 3, "image": "x"}),
+        )),
+        ..Default::default()
+    };
+    vec![
+        Node {
+            id: format!("{source}:n:h1"),
+            kind: NodeKind::Host.into(),
+            name: "h1".into(),
+            parent: Some(source.into()),
+            provider: Provider::Kubernetes.into(),
+            own: Own::Ok.into(),
+            ..Default::default()
+        },
+        pod("web-1", Own::Crit),
+        pod("fine-1", Own::Ok),
+    ]
+}
+
+#[tokio::test]
+async fn an_alert_on_a_pod_keeps_the_last_lines_of_its_log_for_the_incident_report() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let mut live = rig.get("/api/stream").await; // a browser that is open when the alert opens
+    let source = {
+        // the id is only known after the source is added: the topology is made from it
+        let (id, token) = rig
+            .add_source_named("Kubernetes (agent)", "pod reader")
+            .await;
+        let logs = PodLogs {
+            stopped: Arc::default(),
+            asked: Arc::default(),
+        };
+        let asked = logs.asked.clone();
+        let agent = rig.agent(&id, &token).with_logs(Arc::new(logs));
+        let mut nodes = vec![cluster(&id)];
+        nodes.extend(crashing_pod(&id));
+        agent.set_topology(nodes, vec![]);
+        tokio::spawn(agent.run());
+        (id, asked)
+    };
+    let (id, asked) = source;
+    eventually("the alert has the log", || async {
+        let alerts = rig.get("/api/alerts").await.json::<Value>().await.unwrap();
+        alerts.as_array().unwrap().iter().any(|a| {
+            a["nodeId"]
+                .as_str()
+                .is_some_and(|n| n.ends_with(":p:web-1"))
+                && a["logs"].as_str().is_some_and(|l| l.contains("starting"))
+        })
+    })
+    .await;
+    let alerts = rig.get("/api/alerts").await.json::<Value>().await.unwrap();
+    let alert = alerts
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["nodeId"] == format!("{id}:p:web-1"))
+        .unwrap();
+    let logs = alert["logs"].as_str().unwrap();
+    assert!(
+        logs.starts_with("── before the last restart ──\n"),
+        "it restarted three times: the log before is kept first\n{logs}"
+    );
+    assert!(
+        logs.contains("previous=true tail=200")
+            && logs.contains("── since ──")
+            && logs.contains("previous=false tail=200"),
+        "{logs}"
+    );
+    // the browser that was open is sent the alert again, with the log, and does not have to be reloaded to see it
+    let mut seen = String::new();
+    let found = tokio::time::timeout(Duration::from_secs(5), async {
+        while !seen.contains("before the last restart") {
+            seen.push_str(&String::from_utf8_lossy(
+                &live.chunk().await.unwrap().unwrap(),
+            ));
+        }
+    })
+    .await;
+    assert!(found.is_ok(), "the open stream never got the log: {seen}");
+    // only the pod in trouble was read, and nothing but what the alert needs
+    assert!(
+        asked
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|q| q.name == "web-1" && q.namespace == "shop")
+    );
+}
+
+// ---- teams that each see their own cluster -----------------------------------------------------------------------
+
+/// Two clusters, each with a pod in trouble (so each has an alert); returns the ids and the agents that keep them up.
+async fn two_clusters(rig: &Rig) -> ((String, Uplink), (String, Uplink)) {
+    let mut out = Vec::new();
+    for name in ["perception", "autonomy"] {
+        let (id, token) = rig.add_source_named("Kubernetes (agent)", name).await;
+        let agent = rig.agent(&id, &token);
+        let mut nodes = vec![cluster(&id)];
+        nodes.extend(crashing_pod(&id));
+        agent.set_topology(nodes, vec![]);
+        tokio::spawn(agent.clone().run());
+        out.push((id, agent));
+    }
+    let b = out.pop().unwrap();
+    let a = out.pop().unwrap();
+    eventually("both clusters report an alert", || async {
+        rig.get("/api/alerts")
+            .await
+            .json::<Value>()
+            .await
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len()
+            >= 2
+    })
+    .await;
+    (a, b)
+}
+
+/// A group with a policy, and the user in it.
+async fn team(rig: &Rig, group: &str, user: i64, hcl: &str) {
+    let policy = rig
+        .post("/api/policies", json!({"name": group, "hcl": hcl}))
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let g = rig
+        .post("/api/groups", json!({"name": group}))
+        .await
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{g}/policies"),
+        json!({"policies": [policy]}),
+    )
+    .await;
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{g}/members"),
+        json!({"users": [user]}),
+    )
+    .await;
+}
+
+fn source_ids(nodes: &Value) -> Vec<String> {
+    let mut ids: Vec<String> = nodes
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| {
+            n["id"]
+                .as_str()
+                .unwrap()
+                .split(':')
+                .next()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+#[tokio::test]
+async fn each_team_sees_its_own_cluster_and_nothing_of_the_other() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    let (test2, id2) = user_client(&rig, "testtwo").await;
+    // nobody has a policy yet: in `everyone`, which gives nothing
+    for client in [&test1, &test2] {
+        assert_eq!(
+            client
+                .get(rig.url("/api/snapshot"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    team(
+        &rig,
+        "team-autonomy",
+        id2,
+        &format!("path \"clusters/{b}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+
+    let json = |c: &Client, path: &str| {
+        let (c, url) = (c.clone(), rig.url(path));
+        async move {
+            c.get(url)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+    for (client, mine, other) in [(&test1, &a, &b), (&test2, &b, &a)] {
+        // the map: only the cluster of the team, with its host and pods
+        let snap = json(client, "/api/snapshot").await;
+        assert_eq!(source_ids(&snap["nodes"]), std::slice::from_ref(mine));
+        assert_eq!(
+            snap["nodes"].as_array().unwrap().len(),
+            4,
+            "the cluster, its host and its two pods"
+        );
+        assert!(
+            !snap.to_string().contains(other.as_str()),
+            "nothing of the other cluster"
+        );
+        // the sources, the alerts and the uptime
+        let sources = json(client, "/api/sources").await;
+        assert_eq!(
+            sources
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            [mine.as_str()]
+        );
+        assert_eq!(
+            sources[0]["endpoint"], "",
+            "where it is reached from is for who may read the sources"
+        );
+        let alerts = json(client, "/api/alerts").await;
+        assert!(!alerts.as_array().unwrap().is_empty());
+        assert!(alerts.as_array().unwrap().iter().all(|x| {
+            x["nodeId"]
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("{mine}:"))
+        }));
+        let uptime = json(client, "/api/uptime?span=3600&buckets=10").await;
+        assert!(
+            uptime
+                .as_object()
+                .unwrap()
+                .keys()
+                .all(|k| k.starts_with(&format!("{mine}:"))),
+            "{uptime}"
+        );
+        // what is shared by the wallboard is theirs to read
+        assert_eq!(
+            client
+                .get(rig.url("/api/settings"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        // and nothing else
+        for forbidden in [
+            "/api/users",
+            "/api/groups",
+            "/api/policies",
+            "/api/comm-log",
+            "/api/identity-providers",
+            "/api/security",
+            "/api/registry",
+        ] {
+            assert_eq!(
+                client
+                    .get(rig.url(forbidden))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::FORBIDDEN,
+                "{forbidden}"
+            );
+        }
+        assert_eq!(
+            status_of(&rig, client, reqwest::Method::POST, "/api/sources").await,
+            StatusCode::FORBIDDEN,
+            "read-only"
+        );
+        // the log of a pod is a separate right
+        assert_eq!(
+            client
+                .get(rig.url(&format!("/api/logs/{mine}/shop/web-1")))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    // the admin (break-glass) sees both
+    let snap = json(&rig.http, "/api/snapshot").await;
+    assert_eq!(source_ids(&snap["nodes"]), {
+        let mut v = vec![a.clone(), b.clone()];
+        v.sort();
+        v
+    });
+}
+
+#[tokio::test]
+async fn the_stream_of_a_team_carries_only_the_events_of_its_cluster() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (b, agent_b)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+
+    let mut mine = test1.get(rig.url("/api/stream")).send().await.unwrap();
+    let mut all = rig.get("/api/stream").await;
+    let first = String::from_utf8_lossy(&mine.chunk().await.unwrap().unwrap()).to_string();
+    assert!(
+        first.contains(&format!("{a}:")) && !first.contains(&format!("{b}:")),
+        "the first snapshot is theirs only: {first}"
+    );
+    // something happens in the other cluster, and then in theirs
+    agent_b.status(&format!("{b}:p:fine-1"), Own::Warn, "OTHER-CLUSTER-EVENT");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let mut seen_all = String::new();
+    while let Ok(Ok(Some(chunk))) =
+        tokio::time::timeout(Duration::from_millis(500), all.chunk()).await
+    {
+        seen_all.push_str(&String::from_utf8_lossy(&chunk));
+    }
+    assert!(
+        seen_all.contains("OTHER-CLUSTER-EVENT"),
+        "the admin's stream has it"
+    );
+    let mut seen_mine = String::new();
+    while let Ok(Ok(Some(chunk))) =
+        tokio::time::timeout(Duration::from_millis(500), mine.chunk()).await
+    {
+        seen_mine.push_str(&String::from_utf8_lossy(&chunk));
+    }
+    assert!(
+        !seen_mine.contains("OTHER-CLUSTER-EVENT") && !seen_mine.contains(&format!("{b}:")),
+        "nothing of the other cluster reaches them: {seen_mine}"
+    );
+}
+
+#[tokio::test]
+async fn a_deny_takes_a_cluster_away_even_from_a_group_that_may_read_everything() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (viewer, id) = user_client(&rig, "viewerone").await;
+    let groups: Value = rig.get("/api/groups").await.json().await.unwrap();
+    let viewers = id_named(&groups, "viewers");
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{viewers}/members"),
+        json!({"users": [id]}),
+    )
+    .await;
+    let snap = viewer
+        .get(rig.url("/api/snapshot"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(
+        source_ids(&snap["nodes"]).len(),
+        2,
+        "viewers read everything"
+    );
+    team(
+        &rig,
+        "no-autonomy",
+        id,
+        &format!("path \"clusters/{b}\" {{\n capabilities = [\"deny\"]\n}}\n"),
+    )
+    .await;
+    let snap = viewer
+        .get(rig.url("/api/snapshot"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(source_ids(&snap["nodes"]), std::slice::from_ref(&a));
+    let alerts = viewer
+        .get(rig.url("/api/alerts"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert!(
+        alerts.to_string().contains(&format!("{a}:"))
+            && !alerts.to_string().contains(&format!("{b}:"))
+    );
+}
+
+#[tokio::test]
+async fn the_public_wallboard_still_shows_everything_when_it_is_public() {
+    let rig = Rig::start().await;
+    rig.setup_admin(true).await;
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let snap = Client::new()
+        .get(rig.url("/api/snapshot"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(source_ids(&snap["nodes"]), {
+        let mut v = vec![a, b];
+        v.sort();
+        v
+    });
+    assert_eq!(
+        Client::new()
+            .get(rig.url("/api/sources"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "the list of sources is not for the wallboard"
+    );
+}
+
+#[tokio::test]
+async fn the_wallboard_shows_everything_when_it_is_public_and_the_admin_panel_shows_what_the_policies_say()
+ {
+    let rig = Rig::start().await;
+    rig.setup_admin(true).await; // the wallboard is public
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    let ids = |path: String, c: Client| {
+        let url = rig.url(&path);
+        async move {
+            source_ids(
+                &c.get(url)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()["nodes"],
+            )
+        }
+    };
+    let both = {
+        let mut v = vec![a.clone(), b.clone()];
+        v.sort();
+        v
+    };
+    // logged in, in the admin panel: the cluster of the team, even though the wallboard is public
+    assert_eq!(
+        ids("/api/snapshot".into(), test1.clone()).await,
+        std::slice::from_ref(&a)
+    );
+    let alerts = test1
+        .get(rig.url("/api/alerts"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert!(!alerts.to_string().contains(&format!("{b}:")));
+    // the same person, on the wallboard: everything
+    assert_eq!(
+        ids("/api/snapshot?view=tv".into(), test1.clone()).await,
+        both
+    );
+    let alerts = test1
+        .get(rig.url("/api/alerts?view=tv"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert!(
+        alerts.to_string().contains(&format!("{b}:"))
+            && alerts.to_string().contains(&format!("{a}:"))
+    );
+    // and nobody who is not logged in sees less than the wallboard
+    assert_eq!(ids("/api/snapshot".into(), Client::new()).await, both);
+    // the sources are for the admin panel only: the wallboard does not change them
+    let sources = test1
+        .get(rig.url("/api/sources?view=tv"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(sources.as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_wallboard_that_is_not_public_shows_a_person_what_their_policies_say_too() {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await;
+    let ((a, _), (_b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    let snap = test1
+        .get(rig.url("/api/snapshot?view=tv"))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(
+        source_ids(&snap["nodes"]),
+        std::slice::from_ref(&a),
+        "a wallboard that was not made public cannot show more than the person may see"
+    );
+    assert_eq!(
+        Client::new()
+            .get(rig.url("/api/snapshot?view=tv"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn a_group_that_may_read_the_wallboard_sees_every_cluster_on_it_and_its_own_in_the_admin_panel()
+ {
+    let rig = Rig::start().await;
+    rig.setup_admin(false).await; // the wallboard is not public
+    let ((a, _), (b, _)) = two_clusters(&rig).await;
+    let (test1, id1) = user_client(&rig, "testone").await;
+    team(
+        &rig,
+        "team-perception",
+        id1,
+        &format!("path \"clusters/{a}\" {{\n capabilities = [\"read\"]\n}}\n"),
+    )
+    .await;
+    let ids = |path: &str| {
+        let (c, url) = (test1.clone(), rig.url(path));
+        async move {
+            source_ids(
+                &c.get(url)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()["nodes"],
+            )
+        }
+    };
+    assert_eq!(
+        ids("/api/snapshot?view=tv").await,
+        std::slice::from_ref(&a),
+        "not given the wallboard yet"
+    );
+    // everyone is given it: every logged-in person sees everything on the TV
+    let policy = rig.post("/api/policies", json!({"name": "wallboard", "hcl": "path \"wallboard\" {\n capabilities = [\"read\"]\n}\n"})).await.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let everyone = id_named(
+        &rig.get("/api/groups").await.json::<Value>().await.unwrap(),
+        "everyone",
+    );
+    rig.send(
+        reqwest::Method::PUT,
+        &format!("/api/groups/{everyone}/policies"),
+        json!({"policies": [policy]}),
+    )
+    .await;
+    let both = {
+        let mut v = vec![a.clone(), b.clone()];
+        v.sort();
+        v
+    };
+    assert_eq!(ids("/api/snapshot?view=tv").await, both);
+    assert_eq!(
+        ids("/api/snapshot").await,
+        std::slice::from_ref(&a),
+        "and the admin panel is still their cluster"
+    );
+    assert_eq!(
+        Client::new()
+            .get(rig.url("/api/snapshot?view=tv"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
 }

@@ -9,6 +9,7 @@
 //! * `CRI_SOCKET`     node only: the container runtime socket, so the agent can say which pods run on its node
 //! * `CONNTRACK_FILE` flows only: where the kernel's connection table is, default `/proc/net/nf_conntrack`
 //! * `UPGRADES`      `1` lets the hub change this agent's image (kubernetes and swarm); the install manifest sets it only when the admin allowed it
+//! * `LOGS`          `1` lets the hub read the logs of the containers this agent reports (kubernetes, swarm and docker); the install manifest sets it only when the admin allowed it
 //! * `DOCKER_SOCKET`  swarm and docker only: the Docker engine's socket, default `/var/run/docker.sock`
 
 mod cri;
@@ -24,6 +25,11 @@ use tracing_subscriber::EnvFilter;
 /// The install manifest sets `UPGRADES=1` only when the admin allowed upgrades from the dashboard.
 fn upgrades_allowed() -> bool {
     std::env::var("UPGRADES").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// The install manifest sets `LOGS=1` only when the admin allowed reading container logs from the dashboard.
+fn logs_allowed() -> bool {
+    std::env::var("LOGS").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
 /// The release version the image build passes in (`agent-linux-1.2.3` is 1.2.3), or the crate's version marked `-dev` for a local build.
@@ -83,7 +89,12 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-            hermes_agentkit::run_with(cfg, upgrader, move |sink: SharedSink| {
+            let logs = if logs_allowed() {
+                Some(k8s::logs()?)
+            } else {
+                None
+            };
+            hermes_agentkit::run_with_logs(cfg, upgrader, logs, move |sink: SharedSink| {
                 let (source_id, source_name) = (source_id.clone(), source_name.clone());
                 async move { k8s::run(&source_id, &source_name, sink).await }
             })

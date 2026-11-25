@@ -16,7 +16,9 @@ export function AdminShell({ page, arg }: { page: string; arg: string }) {
   const [cursor, setCursor] = useState('GRID —');
   const now = useNow(1000);
   const api = useMemo(() => ({ setCursor }), []);
-  const current = ADMIN_PAGES.find((p) => p.id === page) ?? ADMIN_PAGES[0]!;
+  const pages = ADMIN_PAGES.filter((p) => !p.allowed || p.allowed(auth.grants));
+  // a page that this person is not offered (a link they were given, a bookmark) is not shown: the first one they have is
+  const current = pages.find((p) => p.id === page) ?? pages[0]!;
   const Page = current.Component;
   const anyCrit = alerts.some((a) => a.sev === 'crit');
 
@@ -25,7 +27,7 @@ export function AdminShell({ page, arg }: { page: string; arg: string }) {
       <header className="ribbon">
         <div className="brand"><Brand /></div>
         <nav>
-          {ADMIN_PAGES.map((p) => (
+          {pages.map((p) => (
             <a key={p.id} className={`nav${p.id === current.id ? ' on' : ''}`} href={`#/admin/${p.id}`}>
               {p.label}
               {p.id === 'alerts' && alerts.length ? <span className={`badge${anyCrit ? '' : ' warn'}`}>{alerts.length}</span> : null}

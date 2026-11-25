@@ -629,3 +629,66 @@ dialog h2 { margin: 0 0 14px; font-size: 18px; }
 .pair-box { display: flex; flex-direction: column; gap: 4px; margin: 0 0 14px; }
 .pair-code { font: 700 26px var(--mono); letter-spacing: .12em; color: var(--text); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 14px; user-select: all; word-break: break-all; }
 .pair-code.small { font-size: 13px; letter-spacing: 0; font-weight: 500; }
+
+/* the log panel at the bottom of the topology page */
+.logdock { position: sticky; bottom: 0; z-index: 30; display: flex; flex-direction: column; margin-top: 14px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 10px 10px 0 0; box-shadow: 0 -10px 30px rgba(0, 0, 0, .45); min-height: 140px; }
+.logdock-grip { height: 8px; cursor: ns-resize; border-radius: 10px 10px 0 0; background: linear-gradient(var(--line-2), transparent); flex: none; }
+.logdock-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); flex: none; }
+.logdock-bar select { width: auto; padding: 4px 8px; }
+.logdock-bar input[type=search] { width: 180px; padding: 4px 10px; }
+.logdock-count { font: 500 11px var(--mono); }
+.logdock-status { font: 600 11px var(--mono); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line-2); }
+.logdock-status.live { color: var(--ok); border-color: var(--ok); }
+.logdock-status.failed { color: var(--crit); border-color: var(--crit); }
+.logdock-body { flex: 1; overflow: auto; padding: 6px 12px; font: 12px/1.45 var(--mono); outline: none; }
+.logdock-body .logline { white-space: pre; }
+.logdock-body.wrap .logline { white-space: pre-wrap; word-break: break-all; }
+.logline.lg-err { color: var(--crit); }
+.logline.lg-warn { color: var(--warn); }
+.logline mark { background: color-mix(in srgb, var(--accent) 45%, transparent); color: inherit; border-radius: 2px; }
+.logdock-error { color: var(--crit); padding: 6px 0; font-family: var(--font); font-size: 13px; }
+
+.report-log { max-height: 260px; overflow: auto; margin: 0 0 8px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 8px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-all; }
+
+/* what the parts of a log line are */
+.logline .tk-time { color: #7f8ea3; }
+.logline .tk-key { color: #7aa2f7; }
+.logline .tk-str { color: #9ece6a; }
+.logline .tk-num { color: #ff9e64; }
+.logline .tk-bool { color: #ff9e64; font-style: italic; }
+.logline .tk-ip { color: #2ac3de; }
+.logline .tk-url, .logline .tk-path { color: #73daca; }
+.logline .tk-method { color: #bb9af7; font-weight: 600; }
+.logline .tk-tag { color: #e0af68; }
+.logline .tk-s2 { color: var(--ok); font-weight: 600; }
+.logline .tk-s3 { color: #2ac3de; font-weight: 600; }
+.logline .tk-s4 { color: var(--warn); font-weight: 600; }
+.logline .tk-s5 { color: var(--crit); font-weight: 700; }
+.logline .tk-lvl-trace { color: #565f89; }
+.logline .tk-lvl-debug { color: #7f8ea3; }
+.logline .tk-lvl-info { color: #2ac3de; font-weight: 600; }
+.logline .tk-lvl-warn { color: var(--warn); font-weight: 700; }
+.logline .tk-lvl-error { color: var(--crit); font-weight: 700; }
+/* a line that is an error or a warning keeps its colour for the text that is nothing in particular */
+
+/* the colours a program wrote into its own log */
+.logline .ansi-black { color: #565f89; }
+.logline .ansi-red { color: #f7768e; }
+.logline .ansi-green { color: #9ece6a; }
+.logline .ansi-yellow { color: #e0af68; }
+.logline .ansi-blue { color: #7aa2f7; }
+.logline .ansi-magenta { color: #bb9af7; }
+.logline .ansi-cyan { color: #2ac3de; }
+.logline .ansi-white { color: #c0caf5; }
+.logline .ansi-bright-black { color: #7f8ea3; }
+.logline .ansi-bright-red { color: #ff7a93; }
+.logline .ansi-bright-green { color: #b9f27c; }
+.logline .ansi-bright-yellow { color: #ffc777; }
+.logline .ansi-bright-blue { color: #82aaff; }
+.logline .ansi-bright-magenta { color: #c099ff; }
+.logline .ansi-bright-cyan { color: #4fd6be; }
+.logline .ansi-bright-white { color: #ffffff; }
+.logline .ansi-bold { font-weight: 700; }
+.logline .ansi-dim { opacity: .65; }
+.logline .ansi-italic { font-style: italic; }
+.logline .ansi-underline { text-decoration: underline; }

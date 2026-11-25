@@ -64,6 +64,8 @@ pub struct AgentParams<'a> {
     pub flows: bool,
     /// The agents may change their own image when the hub asks: the manifest adds the rights and the switch for it.
     pub upgrades: bool,
+    /// The agents may read the logs of the containers when the hub asks: the manifest adds the right and the switch for it.
+    pub logs: bool,
 }
 
 /// The source types that have an installer, alphabetically.
@@ -124,6 +126,7 @@ pub fn render(source_type: &str, p: &AgentParams<'_>) -> Result<(String, &'stati
             PullSecretData => p.pull_secret_data,
             Flows => p.flows,
             Upgrades => p.upgrades,
+            Logs => p.logs,
         })
         .context("cannot render the agent manifest")?;
     Ok((out, hint))

@@ -16,6 +16,7 @@ fn params(full: bool) -> AgentParams<'static> {
         pull_secret_data: "",
         flows: false,
         upgrades: false,
+        logs: false,
     }
 }
 
@@ -192,4 +193,39 @@ fn a_docker_source_is_one_machine_with_its_own_compose_file() {
         full.contains(r"npipe") && full.contains("agent-windows:1.2.3-ltsc2022"),
         "{full}"
     );
+}
+
+#[test]
+fn reading_logs_is_off_unless_the_admin_allowed_it_and_then_it_is_the_log_and_nothing_more() {
+    for kind in [TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT, TYPE_DOCKER_AGENT] {
+        let (off, _) = render(kind, &params(false)).unwrap();
+        assert!(
+            !off.contains("LOGS") && !off.contains("pods/log"),
+            "{kind}: off by default"
+        );
+    }
+    let on = |kind: &str| {
+        render(
+            kind,
+            &AgentParams {
+                logs: true,
+                ..params(false)
+            },
+        )
+        .unwrap()
+        .0
+    };
+    let k8s = on(TYPE_KUBERNETES_AGENT);
+    assert_eq!(k8s.matches("pods/log").count(), 1);
+    assert!(
+        k8s.contains("resources: [\"pods/log\"]\n    verbs: [\"get\"]"),
+        "get, and no other verb"
+    );
+    assert_eq!(
+        k8s.matches("name: LOGS, value: \"1\"").count(),
+        1,
+        "only the cluster reader: the node agents have no API to read it from"
+    );
+    assert!(on(TYPE_SWARM_AGENT).contains("LOGS: \"1\""));
+    assert!(on(TYPE_DOCKER_AGENT).contains("LOGS: \"1\""));
 }

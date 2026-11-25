@@ -129,7 +129,7 @@ describe('sources on a datacenter', () => {
 
   it('marks a source with its datacenter and sends what is done to it there', async () => {
     const { hub, store } = await renderWithHub(<Sources />, { prepare: withDc2 });
-    hub.sources = [{ id: 's9', name: 'dc2-swarm', type: 'Docker Swarm (agent)', endpoint: '', auth: 'Agent token', state: 'connected', info: 'agent reporting', agents: [], canUpgrade: false, dc: 'd1', dcName: 'dc2' }];
+    hub.sources = [{ id: 's9', name: 'dc2-swarm', type: 'Docker Swarm (agent)', endpoint: '', auth: 'Agent token', state: 'connected', info: 'agent reporting', agents: [], canUpgrade: false, canLogs: false, dc: 'd1', dcName: 'dc2' }];
     await act(async () => { await store.refreshSources(); });
     expect(screen.getByTitle('Hosted by the datacenter dc2')).toHaveTextContent('dc2');
     const user = userEvent.setup();

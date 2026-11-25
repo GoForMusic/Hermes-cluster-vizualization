@@ -13,6 +13,7 @@ import type { ProviderTest } from '../generated/ProviderTest';
 import type { ProviderView } from '../generated/ProviderView';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
+import type { LogHandlers, LogOptions } from '../hub/HubClient';
 import type { GroupView } from '../generated/GroupView';
 import type { SessionPolicy } from '../generated/SessionPolicy';
 import type { SourceView } from '../generated/SourceView';
@@ -48,6 +49,11 @@ export interface FakeHub {
   sessionPolicy: SessionPolicy;
   groups: GroupView[];
   policies: PolicyView[];
+  /** the logs the fake hub streams: every open log gets `lines` and then ends (or fails with `logError`, or stays open when `logsFollow`) */
+  logLines: string[];
+  logError: string;
+  /** the logs that are open now: what they were opened with, and whether they were stopped */
+  openLogs: { source: string; namespace: string; name: string; options: LogOptions; handlers: LogHandlers; stopped: boolean }[];
   /** the identity providers the fake hub holds, and what "Test connection" answers */
   providers: ProviderView[];
   providerTest: ProviderTest;
@@ -77,6 +83,9 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     sessionPolicy: { maxHours: 336, idleMinutes: 0 },
     groups: [],
     policies: [],
+    logLines: [],
+    logError: '',
+    openLogs: [],
     providers: [],
     providerTest: { ok: true, message: 'found https://idp.example.com (login at https://idp.example.com/authorize)' },
     check: { allowed: true, reason: 'allowed by read-only' },
@@ -105,7 +114,7 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
     settings: { load: async () => ({}), save: async (s) => { hub.saved.push(s); } },
     sources: {
       list: async () => { note('sources.list'); return hub.sources; },
-      add: async (r, dc) => { note(`sources.add:${r.name}`); note(`sources.dc:${dc ?? ''}`); note(`sources.flows:${r.flows === true}`); note(`sources.version:${r.version ?? ''}`); note(`sources.upgrades:${r.upgrades === true}`); return { id: 's1', name: r.name, type: r.type, endpoint: '', auth: '', state: 'pending', info: '', install: 'yaml', hint: 'apply it' }; },
+      add: async (r, dc) => { note(`sources.add:${r.name}`); note(`sources.dc:${dc ?? ''}`); note(`sources.flows:${r.flows === true}`); note(`sources.version:${r.version ?? ''}`); note(`sources.upgrades:${r.upgrades === true}`); note(`sources.logs:${r.logs === true}`); return { id: 's1', name: r.name, type: r.type, endpoint: '', auth: '', state: 'pending', info: '', install: 'yaml', hint: 'apply it' }; },
       rename: async (id, name, dc) => { note(`sources.rename:${id}:${name}${dc ? `@${dc}` : ''}`); if (hub.renameError) throw new Error(hub.renameError); },
       remove: async (id, dc) => note(`sources.remove:${id}${dc ? `@${dc}` : ''}`),
       upgrade: async (id, version, dc) => { note(`sources.upgrade:${id}:${version}${dc ? `@${dc}` : ''}`); if (hub.upgradeError) throw new Error(hub.upgradeError); },
@@ -225,6 +234,20 @@ export function fakeHub(auth: Partial<AuthStatus> = {}): FakeHub {
       },
       remove: async (id) => { note(`sso.remove:${id}`); refuse(); hub.providers = hub.providers.filter((p) => p.id !== id); },
       test: async (issuer) => { note(`sso.test:${issuer}`); return hub.providerTest; },
+    },
+    logs: {
+      open: (source, namespace, name, options, handlers) => {
+        note(`logs.open:${source}/${namespace}/${name}:${options.container ?? ''}:${options.tail}:${options.follow}:${options.previous}:${options.timestamps}:${options.task ?? ''}`);
+        const entry = { source, namespace, name, options, handlers, stopped: false };
+        hub.openLogs.push(entry);
+        queueMicrotask(() => {
+          if (entry.stopped) return;
+          if (hub.logError) { handlers.onError(hub.logError); return; }
+          if (hub.logLines.length) handlers.onLines(hub.logLines);
+          if (!options.follow) handlers.onEnd();
+        });
+        return () => { entry.stopped = true; note('logs.stop'); };
+      },
     },
     uptime: { load: async (span) => { note(`uptime:${span}`); return hub.uptime; } },
     feed: { connect: (handlers) => { hub.feed.handlers = handlers; hub.feed.closed = false; return () => { hub.feed.closed = true; }; } },

@@ -28,19 +28,57 @@ pub(super) async fn info(_: Viewer) -> Response {
     json_response(StatusCode::OK, info)
 }
 
-pub(super) async fn snapshot(_: Viewer, State(st): State<Shared>) -> Response {
+pub(super) async fn snapshot(Viewer(sight): Viewer, State(st): State<Shared>) -> Response {
     (
         [(header::CONTENT_TYPE, "application/json")],
-        st.store.snapshot_json(),
+        st.store.snapshot_json_where(&|source| sight.sees(source)),
     )
         .into_response()
 }
 
+/// What of an event a person who sees only some clusters may be sent: the event itself, a smaller one, or nothing. An event of a kind that is not known
+/// is not sent: a new kind has to be thought about before it reaches somebody who was meant to see less.
+fn visible(sight: &super::Sight, st: &Shared, raw: &str) -> Option<String> {
+    if sight.everything() {
+        return Some(raw.to_string());
+    }
+    let mut event: serde_json::Value = serde_json::from_str(raw).ok()?;
+    match event["type"].as_str()? {
+        "snapshot" => Some(st.store.snapshot_json_where(&|source| sight.sees(source))),
+        "status" | "meta" => sight
+            .sees_node(event["id"].as_str()?)
+            .then(|| raw.to_string()),
+        "alert" => sight
+            .sees_node(event["alert"]["nodeId"].as_str()?)
+            .then(|| raw.to_string()),
+        "flows" => sight
+            .sees(event["source"].as_str()?)
+            .then(|| raw.to_string()),
+        "metrics" => {
+            let mut any = false;
+            for part in ["nodes", "edges"] {
+                if let Some(map) = event[part].as_object_mut() {
+                    map.retain(|id, _| sight.sees_node(id));
+                    any |= !map.is_empty();
+                }
+            }
+            any.then(|| event.to_string())
+        }
+        // `sources` only says "ask again" and `settings` is what everybody's wallboard shows
+        "sources" | "settings" => Some(raw.to_string()),
+        _ => None,
+    }
+}
+
 /// Server-Sent Events: one JSON event per `data:` line. The browser's `EventSource` reconnects by itself, and every new connection
 /// starts with a full snapshot.
-pub(super) async fn stream(_: Viewer, State(st): State<Shared>, headers: HeaderMap) -> Response {
+pub(super) async fn stream(
+    Viewer(sight): Viewer,
+    State(st): State<Shared>,
+    headers: HeaderMap,
+) -> Response {
     let rx = st.store.subscribe(); // subscribe first so nothing is missed between the snapshot and the stream
-    let first = st.store.snapshot_json();
+    let first = st.store.snapshot_json_where(&|source| sight.sees(source));
     // A page that keeps the stream open for hours must not outlive its login: once a minute the session is asked about (without counting
     // as the person being active), and a stream whose session ended is closed. The browser then reconnects and is told to log in.
     let token = super::cookie(&headers, super::COOKIE_NAME);
@@ -48,14 +86,19 @@ pub(super) async fn stream(_: Viewer, State(st): State<Shared>, headers: HeaderM
     let mut tick = tokio::time::interval(Duration::from_secs(60));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let events = futures_util::stream::unfold(
-        (Some(first), rx, tick, token, auth),
-        |(first, mut rx, mut tick, token, auth)| async move {
+        (Some(first), rx, tick, token, auth, sight, st),
+        |(first, mut rx, mut tick, token, auth, sight, st)| async move {
             let data = match first {
                 Some(snapshot) => snapshot,
                 None => loop {
                     tokio::select! {
                         // too slow (or closed): end the stream, the browser reconnects and gets a fresh snapshot
-                        got = rx.recv() => break got.ok()?.to_string(),
+                        got = rx.recv() => {
+                            // what this person may not see is not sent: the next event is waited for
+                            if let Some(data) = visible(&sight, &st, &got.ok()?) {
+                                break data;
+                            }
+                        }
                         _ = tick.tick() => {
                             if token.as_deref().is_some_and(|t| !auth.is_alive(t)) {
                                 return None;
@@ -66,7 +109,7 @@ pub(super) async fn stream(_: Viewer, State(st): State<Shared>, headers: HeaderM
             };
             Some((
                 Ok::<_, Infallible>(SseEvent::default().data(data)),
-                (None, rx, tick, token, auth),
+                (None, rx, tick, token, auth, sight, st),
             ))
         },
     );

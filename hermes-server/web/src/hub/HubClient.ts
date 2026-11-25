@@ -152,6 +152,34 @@ export interface ISsoApi {
   test(issuer: string): Promise<ProviderTest>;
 }
 
+export interface LogOptions {
+  /** The container inside the pod; empty is the first one. */
+  container?: string;
+  /** How many of the last lines to start with. */
+  tail: number;
+  /** Keep going: new lines arrive as they are written. */
+  follow: boolean;
+  /** The container before the last restart (on Swarm, the task before this one). */
+  previous: boolean;
+  timestamps: boolean;
+  /** Swarm: the exact task. */
+  task?: string;
+}
+
+export interface LogHandlers {
+  onLines(lines: string[]): void;
+  /** The log ended; nothing more comes. */
+  onEnd(): void;
+  /** It failed, and why (in words for the person looking). Nothing more comes. */
+  onError(message: string): void;
+}
+
+/** The log of a container, streamed as it is read. Nothing is kept by the hub. */
+export interface ILogsApi {
+  /** Starts reading; the function it returns stops it (and tells the agent). `namespace` is `-` for a workload that has none. */
+  open(source: string, namespace: string, name: string, options: LogOptions, handlers: LogHandlers): () => void;
+}
+
 export interface IUptimeApi {
   /** `span` in seconds. */
   load(span: number, buckets: number): Promise<Record<string, Uptime>>;
@@ -179,6 +207,7 @@ export interface IHubClient {
   federation: IFederationApi;
   commLog: ICommLogApi;
   access: IAccessApi;
+  logs: ILogsApi;
   sso: ISsoApi;
   uptime: IUptimeApi;
   feed: IEventFeed;

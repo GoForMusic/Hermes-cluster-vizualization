@@ -1,6 +1,8 @@
 // Incident history from the hub's database: filter it (period, severity, cluster, words), open the report of any incident, and export what is
 // shown as Markdown for a ticket. Resolved incidents are kept for as many days as Settings says.
 import { useMemo, useState } from 'react';
+import { useSession } from '../../../app/session';
+import { can } from '../../../domain/access';
 import { incidentsMarkdown, sourceOf } from '../../../domain/incidents';
 import type { Alert } from '../../../domain/model';
 import { clusters as clustersOf, getNode } from '../../../domain/selectors';
@@ -12,6 +14,7 @@ import { PageHead } from '../PageHead';
 const PERIODS = [['24h', 86_400_000], ['7d', 7 * 86_400_000], ['30d', 30 * 86_400_000], ['All', 0]] as const;
 
 export function Alerts() {
+  const { auth } = useSession();
   const store = useStore();
   const state = useWholeState();
   const alerts = useHubState((s) => s.alerts);
@@ -75,7 +78,7 @@ export function Alerts() {
       </div>
       <div className="list">
         {rows.length
-          ? rows.map((a) => <AlertCard key={a.id} alert={a} onAck={(id) => void store.ackAlert(id)} onOpen={setReport} context={(() => { const n = getNode(state, a.nodeId); return n ? n.name : undefined; })()} />)
+          ? rows.map((a) => <AlertCard key={a.id} alert={a} onAck={can(auth.grants, 'create', `alerts/${a.id}/ack`) ? (id) => void store.ackAlert(id) : undefined} onOpen={setReport} context={(() => { const n = getNode(state, a.nodeId); return n ? n.name : undefined; })()} />)
           : <div className="empty"><b>Nothing here</b>Incidents appear here as they happen and stay after they are resolved.</div>}
       </div>
       <IncidentReport alert={report} onClose={() => setReport(null)} onOpen={setReport} />

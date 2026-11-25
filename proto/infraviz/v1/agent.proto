@@ -23,6 +23,7 @@ message AgentMessage {
     Hello hello = 1;
     Batch batch = 2;
     UpgradeStatus upgrade_status = 3;
+    LogChunk log_chunk = 4;
   }
 }
 
@@ -39,6 +40,7 @@ message Hello {
   // What this agent collects: kubernetes | swarm | node.
   string collector = 5;
   // What this agent can do besides reporting. "upgrade": it can change its own image when the hub asks (only when the install manifest allowed it).
+  // "logs": it can read the logs of the containers it reports, when the hub asks (only when the install manifest allowed it).
   repeated string features = 6;
 }
 
@@ -157,6 +159,8 @@ message HubMessage {
   oneof message {
     Resync resync = 1;
     Upgrade upgrade = 2;
+    LogRequest log_request = 3;
+    LogCancel log_cancel = 4;
   }
 }
 
@@ -164,6 +168,48 @@ message HubMessage {
 // point it anywhere else.
 message Upgrade {
   string version = 1;
+}
+
+// Read the log of one container. The hub asks one agent at a time; an agent that cannot serve it (a Swarm worker has no say over tasks,
+// the cluster reader of another namespace...) answers with `LogChunk.not_here` and the hub asks the next. What is read is only streamed
+// through: nothing is kept by the agent or by the hub.
+message LogRequest {
+  // Tells this request from the others on the stream; the chunks that answer carry it.
+  uint64 id = 1;
+  // Where the workload is: the Kubernetes namespace (or the Swarm stack) and its name (the pod, or the task `service.slot`).
+  string namespace = 2;
+  string name = 3;
+  // The container inside it; empty is the first one.
+  string container = 4;
+  // The last lines to start with (the agent applies its own ceiling).
+  uint32 tail = 5;
+  // Keep sending what is written from now on.
+  bool follow = 6;
+  // The one before this one (a container that crashed and was started again; on Swarm, the task before this one in the same slot).
+  bool previous = 7;
+  // Only what is newer than this many seconds; 0 is no limit.
+  uint32 since_seconds = 8;
+  // The engine's own timestamp at the start of each line.
+  bool timestamps = 9;
+  // Swarm: the task id, which is exact (the name is not unique over time). Empty on Kubernetes.
+  string task = 10;
+}
+
+// The viewer left: stop reading.
+message LogCancel {
+  uint64 id = 1;
+}
+
+// What came out of a `LogRequest`: lines, and then either `end` or `error`.
+message LogChunk {
+  uint64 id = 1;
+  repeated string lines = 2;
+  // Nothing more will come: the log ended (not followed), or the container did.
+  bool end = 3;
+  // It failed, and why (in words for the person looking).
+  string error = 4;
+  // This agent is not the one to ask for this workload; try another. Sent with `error`.
+  bool not_here = 5;
 }
 
 // The hub has no topology for this agent (it restarted): send the snapshot again.

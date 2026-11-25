@@ -7,6 +7,7 @@
 
 pub mod docker;
 pub mod engine;
+pub mod logs;
 pub mod metrics;
 pub mod standalone;
 mod state;
@@ -71,7 +72,16 @@ pub async fn run_agent(
             connector_for(&socket),
         )))) as _
     });
-    hermes_agentkit::run_with(cfg, upgrader, move |sink: SharedSink| {
+    // `LOGS=1` (set by the install manifest when the admin allowed it): the hub may read the logs of the tasks, through a manager
+    let logs: Option<hermes_agentkit::SharedLogs> = std::env::var("LOGS")
+        .is_ok_and(|v| !v.is_empty() && v != "0")
+        .then(|| {
+            Arc::new(logs::DockerLogs::new(
+                Arc::new(Engine::new(connector_for(&socket))),
+                logs::Mode::Swarm,
+            )) as _
+        });
+    hermes_agentkit::run_with_logs(cfg, upgrader, logs, move |sink: SharedSink| {
         let (source_id, source_name) = (source_id.clone(), source_name.clone());
         let engine = Arc::new(Engine::new(connector_for(&socket)));
         let sampler = new_sampler();

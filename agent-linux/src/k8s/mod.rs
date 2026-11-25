@@ -5,6 +5,7 @@
 
 mod client;
 mod kubelet;
+mod logs;
 mod metrics;
 mod network;
 mod quantity;
@@ -57,6 +58,15 @@ pub fn upgrader() -> Result<hermes_agentkit::SharedUpgrader> {
     Ok(std::sync::Arc::new(upgrade::K8sUpgrader::new(
         client, &namespace,
     )))
+}
+
+/// What reads the logs of pods for the dashboard, with the service account of the pod: it needs `pods/log: get`, which the manifest gives only
+/// when the admin allowed it.
+pub fn logs() -> Result<hermes_agentkit::SharedLogs> {
+    let config = kube::Config::incluster()
+        .context("not running inside a Kubernetes cluster (no service account)")?;
+    let client = Client::try_from(config).context("cannot set up the Kubernetes client")?;
+    Ok(std::sync::Arc::new(logs::K8sLogs::new(client)))
 }
 
 /// Watches the cluster behind `config` (the tests point it at a fake API server).

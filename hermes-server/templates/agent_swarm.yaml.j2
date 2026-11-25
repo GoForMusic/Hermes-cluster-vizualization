@@ -17,6 +17,9 @@ services:
       COLLECTOR: swarm
       TOKEN: "{{ Token }}"
       AGENT_HOST: "{{ SourceID }}:n:{{ "{{.Node.ID}}" }}"   # Swarm fills in the node id: this node's own heartbeat says it is alive
+{%- if Logs %}
+      LOGS: "1"   # allowed when this source was added: the dashboard's log panel (a manager's agent reads the logs of the tasks)
+{%- endif %}
 {%- if Upgrades %}
       UPGRADES: "1"   # allowed when this source was added: the dashboard's "Change agent version" (a manager's agent changes the image of these services)
 {%- endif %}

@@ -22,6 +22,10 @@ pub struct AddSourceRequest {
     /// The agents may change their own image when the dashboard asks (Change agent version). Off, the agent stays strictly read-only.
     #[ts(as = "Option<bool>", optional)]
     pub upgrades: bool,
+    /// The agents may read the logs of the containers they report when the dashboard asks (the log panel). Off, no agent can: the manifest
+    /// gives no right to, and the agent says it cannot.
+    #[ts(as = "Option<bool>", optional)]
+    pub logs: bool,
     /// Swarm and Docker: some machines are Windows, so the stack (or compose file) also gets the Windows agent.
     #[ts(as = "Option<bool>", optional)]
     pub windows: bool,

@@ -8,6 +8,8 @@ type Fetch = typeof fetch;
 type EventSourceFactory = (url: string) => EventSource;
 
 export interface HttpOptions {
+  /** The page is the wallboard (TV): what it reads is asked for as the wallboard's, which shows every cluster when the admin made it public. */
+  wallboard?: () => boolean;
   fetch?: Fetch;
   eventSource?: EventSourceFactory;
   /** Called when a request is refused because there is no session: the app goes back to the login screen. */
@@ -21,6 +23,8 @@ const root = (dc?: string): string => (dc ? `/api/dc/${encodeURIComponent(dc)}` 
 const CSRF = { 'X-Requested-With': 'hermes' };
 
 export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
+  /** The reads that the wallboard makes carry `view=tv`: the hub then shows the wallboard's clusters, not only the ones the person's policies give. */
+  const tv = (path: string): string => (options.wallboard?.() ? `${path}${path.includes('?') ? '&' : '?'}view=tv` : path);
   const doFetch: Fetch = options.fetch ?? ((input, init) => fetch(input, init));
   const onAuth = options.onAuthRequired ?? (() => {});
 
@@ -56,15 +60,15 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       setSessionPolicy: (policy) => call('PUT', '/api/security', policy),
     },
     topology: {
-      snapshot: () => get('/api/snapshot'),
-      info: () => get('/api/info'),
+      snapshot: () => get(tv('/api/snapshot')),
+      info: () => get(tv('/api/info')),
     },
     alerts: {
-      list: (limit = 300) => get(`/api/alerts?limit=${limit}`),
+      list: (limit = 300) => get(tv(`/api/alerts?limit=${limit}`)),
       ack: (id) => send('POST', `/api/alerts/${id}/ack`),
     },
     settings: {
-      load: () => get('/api/settings'),
+      load: () => get(tv('/api/settings')),
       save: (settings) => send('PUT', '/api/settings', settings),
     },
     sources: {
@@ -123,22 +127,83 @@ export function createHttpHubClient(options: HttpOptions = {}): IHubClient {
       remove: (id) => send('DELETE', `/api/identity-providers/${encodeURIComponent(id)}`),
       test: (issuer) => call('POST', '/api/identity-providers/test', { issuer }),
     },
-    uptime: {
-      load: (span, buckets) => get(`/api/uptime?span=${span}&buckets=${buckets}`),
+    logs: {
+      open(source, namespace, name, options, handlers) {
+        const stop = new AbortController();
+        const q = new URLSearchParams({ tail: String(options.tail) });
+        if (options.follow) q.set('follow', 'true');
+        if (options.previous) q.set('previous', 'true');
+        if (options.timestamps) q.set('timestamps', 'true');
+        if (options.container) q.set('container', options.container);
+        if (options.task) q.set('task', options.task);
+        const path = [source, namespace, name].map(encodeURIComponent).join('/');
+        void (async () => {
+          let finished = false;
+          try {
+            const res = await doFetch(withBase(`/api/logs/${path}?${q}`), { signal: stop.signal, cache: 'no-store' });
+            if (!res.ok) {
+              const data = (await res.json().catch(() => null)) as { error?: string; auth?: boolean } | null;
+              if (res.status === 401 && data?.auth === true) onAuth();
+              finished = true;
+              handlers.onError(data?.error ?? res.statusText);
+              return;
+            }
+            await readEvents(res, (event, data) => {
+              if (event === 'end') { finished = true; handlers.onEnd(); }
+              else if (event === 'failed') { finished = true; handlers.onError((JSON.parse(data) as { error: string }).error); }
+              else if (event === 'message') handlers.onLines((JSON.parse(data) as { lines: string[] }).lines);
+            });
+            if (!finished && !stop.signal.aborted) handlers.onError('The connection to the hub closed.');
+          } catch (e) {
+            if (!stop.signal.aborted && !finished) handlers.onError(e instanceof Error ? e.message : String(e));
+          }
+        })();
+        return () => stop.abort();
+      },
     },
-    feed: sseFeed(options.eventSource ?? ((url) => new EventSource(url))),
+    uptime: {
+      load: (span, buckets) => get(tv(`/api/uptime?span=${span}&buckets=${buckets}`)),
+    },
+    feed: sseFeed(options.eventSource ?? ((url) => new EventSource(url)), () => tv('/api/stream')),
   };
 }
 
 /** `EventSource` reconnects on its own and every connection starts with a snapshot, so a dropped link heals itself. */
-function sseFeed(create: EventSourceFactory): IEventFeed {
+function sseFeed(create: EventSourceFactory, path: () => string): IEventFeed {
   return {
     connect(handlers: FeedHandlers) {
-      const es = create(withBase('/api/stream'));
+      const es = create(withBase(path()));
       es.onmessage = (e: MessageEvent<string>) => handlers.onEvent(JSON.parse(e.data) as HubEvent);
       es.onopen = () => handlers.onOpen();
       es.onerror = () => handlers.onError(es.readyState === EventSource.CLOSED);
       return () => es.close();
     },
   };
+}
+
+/** Reads a Server-Sent Events response as it arrives: `onEvent(name, data)` for each event ("message" when it has no name). Comments are skipped. */
+async function readEvents(res: Response, onEvent: (event: string, data: string) => void): Promise<void> {
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const dispatch = (block: string): void => {
+    let event = 'message';
+    const data: string[] = [];
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+    }
+    if (data.length) onEvent(event, data.join('\n'));
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    let at: number;
+    while ((at = buffer.indexOf('\n\n')) >= 0) {
+      dispatch(buffer.slice(0, at));
+      buffer = buffer.slice(at + 2);
+    }
+  }
 }

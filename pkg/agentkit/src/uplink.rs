@@ -11,8 +11,8 @@ use hermes_proto::PROTOCOL;
 use hermes_proto::prefix::{PathPrefix, split_address};
 use hermes_proto::v1::agent_service_client::AgentServiceClient;
 use hermes_proto::v1::{
-    AgentMessage, Batch, CollectorState, Edge, Flow, Hello, Node, Own, Upgrade, UpgradeState,
-    UpgradeStatus,
+    AgentMessage, Batch, CollectorState, Edge, Flow, Hello, LogChunk, LogRequest, Node, Own,
+    Upgrade, UpgradeState, UpgradeStatus,
 };
 use hermes_proto::v1::{agent_message, hub_message};
 use prost_types::Struct;
@@ -22,8 +22,9 @@ use tonic::Request;
 use tonic::transport::{Certificate, ClientTlsConfig, Endpoint};
 use tracing::{info, warn};
 
+use crate::logs::{LogError, LogQuery, MAX_TAIL};
 use crate::queue::State;
-use crate::{Config, ISink, SharedUpgrader, UpgradeOutcome};
+use crate::{Config, ISink, SharedLogs, SharedUpgrader, UpgradeOutcome};
 
 /// A session that lasted this long was healthy: the next failure starts the back-off over.
 const HEALTHY_AFTER: Duration = Duration::from_secs(10);
@@ -55,6 +56,7 @@ pub struct Uplink {
     timing: Timing,
     state: Arc<Mutex<State>>,
     upgrader: Option<SharedUpgrader>,
+    logs: Option<SharedLogs>,
 }
 
 impl Uplink {
@@ -72,6 +74,7 @@ impl Uplink {
             timing: Timing::default(),
             state: Arc::default(),
             upgrader: None,
+            logs: None,
         })
     }
 
@@ -85,6 +88,13 @@ impl Uplink {
     #[must_use]
     pub fn with_upgrader(mut self, upgrader: SharedUpgrader) -> Self {
         self.upgrader = Some(upgrader);
+        self
+    }
+
+    /// This agent can read the logs of the containers it reports when the hub asks; the hello says so.
+    #[must_use]
+    pub fn with_logs(mut self, logs: SharedLogs) -> Self {
+        self.logs = Some(logs);
         self
     }
 
@@ -130,11 +140,14 @@ impl Uplink {
             host: self.cfg.host.clone(),
             version: self.cfg.version.clone(),
             collector: self.cfg.collector.clone(),
-            features: if self.upgrader.is_some() {
-                vec!["upgrade".into()]
-            } else {
-                vec![]
-            },
+            features: [
+                ("upgrade", self.upgrader.is_some()),
+                ("logs", self.logs.is_some()),
+            ]
+            .into_iter()
+            .filter(|(_, on)| *on)
+            .map(|(name, _)| name.to_string())
+            .collect(),
         };
         tx.try_send(AgentMessage {
             message: Some(agent_message::Message::Hello(hello)),
@@ -157,6 +170,7 @@ impl Uplink {
         // whatever the hub knew before is unknown now: it may have restarted, or missed batches while we were cut off
         self.state().resync = true;
 
+        let mut logs_open = LogTasks::default();
         let mut tick = tokio::time::interval(self.timing.flush);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -175,12 +189,50 @@ impl Uplink {
                     Some(m) => match m.message {
                         Some(hub_message::Message::Resync(_)) => self.state().resync = true,
                         Some(hub_message::Message::Upgrade(u)) => self.upgrade(u, &tx),
+                        Some(hub_message::Message::LogRequest(r)) => self.log_request(r, &tx, &mut logs_open),
+                        Some(hub_message::Message::LogCancel(c)) => logs_open.cancel(c.id),
                         None => {}
                     },
                     None => bail!("the hub closed the stream"),
                 },
             }
         }
+    }
+
+    /// Starts reading a log the hub asked for. Off the session's loop: a followed log lasts as long as someone watches it.
+    fn log_request(&self, r: LogRequest, tx: &mpsc::Sender<AgentMessage>, open: &mut LogTasks) {
+        let id = r.id;
+        let refuse = |why: &str, not_here: bool| {
+            let _ = tx.try_send(log_chunk(LogChunk {
+                id,
+                error: why.into(),
+                not_here,
+                ..Default::default()
+            }));
+        };
+        let Some(logs) = self.logs.clone() else {
+            return refuse("this agent was not installed to read logs", true);
+        };
+        open.reap();
+        if open.len() >= MAX_LOGS_OPEN {
+            return refuse(
+                "too many logs are being read through this agent: close one",
+                false,
+            );
+        }
+        let query = LogQuery {
+            namespace: r.namespace,
+            name: r.name,
+            container: r.container,
+            tail: r.tail.min(MAX_TAIL),
+            follow: r.follow,
+            previous: r.previous,
+            since_seconds: r.since_seconds,
+            timestamps: r.timestamps,
+            task: r.task,
+        };
+        let tx = tx.clone();
+        open.insert(id, tokio::spawn(stream_log(logs, id, query, tx)));
     }
 
     /// Runs an upgrade the hub asked for and tells it how it went. Off the session's loop: it can take a while, and the heartbeat must go on.
@@ -275,4 +327,86 @@ fn status(state: UpgradeState, version: &str, message: &str) -> AgentMessage {
             message: message.to_string(),
         })),
     }
+}
+
+/// How many logs one agent reads at once: each is a connection to the engine or the API, and a stream to the hub.
+const MAX_LOGS_OPEN: usize = 4;
+
+fn log_chunk(chunk: LogChunk) -> AgentMessage {
+    AgentMessage {
+        message: Some(agent_message::Message::LogChunk(chunk)),
+    }
+}
+
+/// The logs being read for the hub. Whatever is still open when the session ends is stopped: nobody is left to watch it.
+#[derive(Default)]
+struct LogTasks(HashMap<u64, tokio::task::JoinHandle<()>>);
+
+impl LogTasks {
+    fn insert(&mut self, id: u64, task: tokio::task::JoinHandle<()>) {
+        if let Some(old) = self.0.insert(id, task) {
+            old.abort();
+        }
+    }
+
+    fn cancel(&mut self, id: u64) {
+        if let Some(task) = self.0.remove(&id) {
+            task.abort();
+        }
+    }
+
+    /// Forgets the ones that finished.
+    fn reap(&mut self) {
+        self.0.retain(|_, t| !t.is_finished());
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl Drop for LogTasks {
+    fn drop(&mut self) {
+        for task in self.0.values() {
+            task.abort();
+        }
+    }
+}
+
+/// Reads one log and sends it to the hub as it comes, and then says how it ended.
+async fn stream_log(logs: SharedLogs, id: u64, query: LogQuery, tx: mpsc::Sender<AgentMessage>) {
+    let (out, mut lines) = mpsc::channel::<Vec<String>>(4);
+    let read = logs.read(query, out);
+    tokio::pin!(read);
+    let mut result: Option<Result<(), LogError>> = None;
+    loop {
+        tokio::select! {
+            Some(batch) = lines.recv() => {
+                if tx.send(log_chunk(LogChunk { id, lines: batch, ..Default::default() })).await.is_err() {
+                    return;
+                }
+            }
+            r = &mut read, if result.is_none() => result = Some(r),
+            else => break,
+        }
+    }
+    let last = match result {
+        Some(Err(LogError::NotHere(why))) => LogChunk {
+            id,
+            error: why,
+            not_here: true,
+            ..Default::default()
+        },
+        Some(Err(LogError::Failed(why))) => LogChunk {
+            id,
+            error: why,
+            ..Default::default()
+        },
+        Some(Ok(())) | None => LogChunk {
+            id,
+            end: true,
+            ..Default::default()
+        },
+    };
+    let _ = tx.send(log_chunk(last)).await;
 }

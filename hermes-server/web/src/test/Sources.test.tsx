@@ -7,7 +7,7 @@ import { Sources } from '../features/admin/pages/Sources';
 
 const source = (over: Partial<SourceView> = {}): SourceView => ({
   id: 's1', name: 'lab-k3s', type: 'Kubernetes (agent)', endpoint: '', auth: 'Agent token', state: 'connected', info: 'agent reporting · 12 nodes',
-  agents: [], expectedAgent: '1.2.3', canUpgrade: false, ...over,
+  agents: [], expectedAgent: '1.2.3', canUpgrade: false, canLogs: false, ...over,
 });
 const agent = (over: Partial<SourceView['agents'][number]> = {}) => ({ id: 'pod-a', version: '1.2.3', collector: 'kubernetes', host: '', seenAgo: 2, outdated: false, protocolOutdated: false, ...over });
 

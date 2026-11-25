@@ -137,6 +137,44 @@ impl Engine {
         Ok(())
     }
 
+    /// `GET path`, and the body as it arrives: a log that is followed does not end. An answer that is not a success is an error with what the
+    /// engine said. The connection lives as long as the body is read; dropping the body closes it.
+    pub async fn open(&self, path: &str) -> Result<hyper::body::Incoming> {
+        let io = self
+            .connector
+            .connect()
+            .await
+            .context("cannot connect to the Docker engine")?;
+        let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(io))
+            .await
+            .context("cannot talk to the Docker engine")?;
+        tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri(path)
+            .header(HOST, "docker")
+            .body(Full::new(Bytes::new()))
+            .context("bad request")?;
+        let response = tokio::time::timeout(TIMEOUT, sender.send_request(request))
+            .await
+            .with_context(|| format!("docker {path}: no answer in {}s", TIMEOUT.as_secs()))?
+            .with_context(|| format!("docker {path}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .into_body()
+                .collect()
+                .await
+                .map(|b| b.to_bytes())
+                .unwrap_or_default();
+            let text = String::from_utf8_lossy(&body[..body.len().min(512)]);
+            bail!("docker {path}: {status} {}", text.trim());
+        }
+        Ok(response.into_body())
+    }
+
     async fn request(&self, method: Method, path: &str, body: Bytes) -> Result<Bytes> {
         let io = self
             .connector

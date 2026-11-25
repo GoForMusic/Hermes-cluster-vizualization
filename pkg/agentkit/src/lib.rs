@@ -5,6 +5,7 @@ mod config;
 pub mod differ;
 pub mod host;
 pub mod location;
+pub mod logs;
 pub mod netrate;
 mod queue;
 mod runner;
@@ -14,7 +15,8 @@ mod upgrade;
 mod uplink;
 
 pub use config::Config;
-pub use runner::{run, run_with};
+pub use logs::{ILogs, LogError, LogQuery, SharedLogs};
+pub use runner::{run, run_with, run_with_logs};
 pub use sink::{ISink, SharedSink};
 pub use tonic::async_trait; // for implementing `IUpgrader` without a dependency of its own
 pub use upgrade::{IUpgrader, SharedUpgrader, UpgradeOutcome, retag};

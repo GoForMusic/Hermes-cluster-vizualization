@@ -112,13 +112,23 @@ impl Inner {
     }
 
     fn snapshot_json(&self) -> String {
+        self.snapshot_json_where(&|_| true)
+    }
+
+    /// The snapshot of the sources `keep` says yes to.
+    fn snapshot_json_where(&self, keep: &dyn Fn(&str) -> bool) -> String {
         #[derive(Serialize)]
         struct Snapshot<'a> {
             r#type: &'static str,
             nodes: Vec<&'a Node>,
             edges: Vec<&'a Edge>,
         }
-        let topos = || self.order.iter().map(|s| &self.topos[s]);
+        let topos = || {
+            self.order
+                .iter()
+                .filter(|s| keep(s))
+                .map(|s| &self.topos[s])
+        };
         let snapshot = Snapshot {
             r#type: "snapshot",
             nodes: topos().flat_map(Topo::all_nodes).collect(),
@@ -171,6 +181,8 @@ pub trait IStore: Send + Sync {
     /// Has the source published a topology? An agent that lost it must send it again.
     fn has_source(&self, src: &str) -> bool;
     fn snapshot_json(&self) -> String;
+    /// The snapshot of only the sources `keep` says yes to (what a person who may see some clusters is sent).
+    fn snapshot_json_where(&self, keep: &dyn Fn(&str) -> bool) -> String;
     /// Records the state a source reports for one node.
     fn set_status(&self, id: &str, own: &str, reason: &str);
     /// Merges fields into a node's meta (restarts, containers, ...) and broadcasts the patch.
@@ -406,6 +418,10 @@ impl IStore for StoreImp {
 
     fn snapshot_json(&self) -> String {
         self.read().snapshot_json()
+    }
+
+    fn snapshot_json_where(&self, keep: &dyn Fn(&str) -> bool) -> String {
+        self.read().snapshot_json_where(keep)
     }
 
     fn set_status(&self, id: &str, own: &str, reason: &str) {

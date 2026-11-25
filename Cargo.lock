@@ -1260,6 +1260,7 @@ version = "1.0.3"
 dependencies = [
  "anyhow",
  "axum",
+ "futures-util",
  "hermes-agentkit",
  "hermes-proto",
  "hermes-swarm",

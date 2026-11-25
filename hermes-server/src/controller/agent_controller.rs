@@ -16,7 +16,8 @@ use tracing::{info, warn};
 
 use crate::model::Source;
 use crate::services::{
-    Event, HelloInfo, IIngestService, NewEntry, SharedCommLog, SharedUpgrades, describe_batch,
+    Event, HelloInfo, IIngestService, LogServiceImp, NewEntry, SharedCommLog, SharedUpgrades,
+    describe_batch,
 };
 
 /// A first snapshot of a big cluster is far above tonic's default limit of 4 MiB.
@@ -29,11 +30,13 @@ const REAUTH_EVERY: Duration = Duration::from_secs(30);
 pub(super) fn routes(
     ingest: Arc<dyn IIngestService>,
     upgrades: SharedUpgrades,
+    logs: Arc<LogServiceImp>,
     log: SharedCommLog,
 ) -> tonic::service::Routes {
     let service = AgentServiceServer::new(Agents {
         ingest,
         upgrades,
+        logs,
         log,
     })
     .max_decoding_message_size(MAX_MESSAGE);
@@ -43,6 +46,7 @@ pub(super) fn routes(
 struct Agents {
     ingest: Arc<dyn IIngestService>,
     upgrades: SharedUpgrades,
+    logs: Arc<LogServiceImp>,
     log: SharedCommLog,
 }
 
@@ -73,6 +77,7 @@ impl AgentService for Agents {
         let (tx, rx) = mpsc::channel(4);
         let ingest = self.ingest.clone();
         let upgrades = self.upgrades.clone();
+        let logs = self.logs.clone();
         let log = self.log.clone();
 
         tokio::spawn(async move {
@@ -107,6 +112,7 @@ impl AgentService for Agents {
                 },
             );
             let session = upgrades.attach(&source.id, &hello.agent, &hello.features, tx.clone());
+            let log_session = logs.attach(&source.id, &hello.agent, &hello.features, tx.clone());
             let trail = Trail {
                 log: &*log,
                 source: &source,
@@ -115,7 +121,10 @@ impl AgentService for Agents {
             trail.record("in", "connected", "hello".into(), u64::try_from(hello.encoded_len()).unwrap_or(0), || {
                 json!({"agent": hello.agent, "host": hello.host, "version": hello.version, "collector": hello.collector, "protocol": hello.protocol, "features": hello.features})
             });
-            let why = run_session(&*ingest, &*upgrades, &trail, &hello, &token, &tx, inbound).await;
+            let why = run_session(
+                &*ingest, &*upgrades, &logs, &trail, &hello, &token, &tx, inbound,
+            )
+            .await;
             trail.record(
                 "link",
                 "disconnected",
@@ -124,6 +133,7 @@ impl AgentService for Agents {
                 || json!({"reason": why}),
             );
             upgrades.detach(&source.id, &hello.agent, session);
+            logs.detach(&source.id, &hello.agent, log_session);
             info!(
                 "agent {} disconnected from source {}",
                 hello.agent, source.id
@@ -195,9 +205,12 @@ impl Trail<'_> {
 
 /// Applies every batch the agent sends after its hello, until it disconnects or the source it authenticated with is gone
 /// (checked every `REAUTH_EVERY`, since a deleted source's token must stop working without waiting for the agent to reconnect).
+// the pieces of one session: a struct for them would only be a way to carry them
+#[allow(clippy::too_many_arguments)]
 async fn run_session(
     ingest: &dyn IIngestService,
     upgrades: &dyn crate::services::IUpgradeService,
+    logs: &LogServiceImp,
     trail: &Trail<'_>,
     hello: &Hello,
     token: &str,
@@ -219,6 +232,11 @@ async fn run_session(
                             json!({"state": format!("{:?}", status.state()), "version": status.version, "message": status.message})
                         });
                         upgrades.report(&trail.source.id, &hello.agent, &status);
+                        continue;
+                    }
+                    // what an agent reads of a log goes straight to whoever is watching it; it is not recorded anywhere, and not in the communication log
+                    Some(agent_message::Message::LogChunk(chunk)) => {
+                        logs.chunk(&trail.source.id, &hello.agent, chunk);
                         continue;
                     }
                     _ => continue,

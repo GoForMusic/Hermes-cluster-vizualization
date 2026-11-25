@@ -15,6 +15,7 @@ mod comm_log_controller;
 mod federation_controller;
 mod federation_link_controller;
 mod live_controller;
+mod logs_controller;
 mod registry_controller;
 mod settings_controller;
 mod sources_controller;
@@ -41,6 +42,8 @@ use crate::services::{IIngestService, SharedCommLog, SharedUpgrades};
 use crate::version::VERSION;
 
 type Shared = Arc<AppState>;
+
+pub use logs_controller::MAX_LOG_STREAMS;
 
 const COOKIE_NAME: &str = "hermes_session";
 /// A custom header cannot be sent cross-origin without a CORS preflight: its presence is the proof that the page is ours.
@@ -98,6 +101,10 @@ pub fn routes(state: Shared) -> Router {
         .route(
             "/api/registry/versions",
             get(registry_controller::registry_versions),
+        )
+        .route(
+            "/api/logs/{source}/{*target}",
+            get(logs_controller::read_log),
         )
         .route(
             "/api/identity-providers",
@@ -186,7 +193,7 @@ pub fn agent_routes(
     upgrades: SharedUpgrades,
     comm_log: SharedCommLog,
 ) -> Router {
-    let routes = agent_controller::routes(ingest, upgrades, comm_log);
+    let routes = agent_controller::routes(ingest, upgrades, state.logs.clone(), comm_log);
     federation_link_controller::add(routes, state).into_axum_router()
 }
 
@@ -338,26 +345,149 @@ impl FromRequestParts<Shared> for Login {
     }
 }
 
-/// For read-only data: a logged-in admin, or anyone when the wallboard is public.
-struct Viewer;
+/// Which clusters (sources) a person may see: a person who may read `clusters/<source id>` sees that cluster, its map, its alerts and its uptime, and
+/// nothing of the ones they may not. The wallboard that is public, and a master hub's own link, see everything. A node, an edge or an alert belongs to the
+/// source its id starts with (`<source id>:...`).
+pub(crate) struct Sight {
+    everything: bool,
+    user: Option<User>,
+    authz: Arc<dyn crate::services::IAuthz>,
+    /// Answers for a few seconds: a stream asks about the same source for every event.
+    memo: std::sync::Mutex<(std::time::Instant, std::collections::HashMap<String, bool>)>,
+}
+
+impl Sight {
+    fn new_memo() -> std::sync::Mutex<(std::time::Instant, std::collections::HashMap<String, bool>)>
+    {
+        std::sync::Mutex::new((std::time::Instant::now(), std::collections::HashMap::new()))
+    }
+
+    fn all(authz: Arc<dyn crate::services::IAuthz>) -> Arc<Self> {
+        Arc::new(Self {
+            everything: true,
+            user: None,
+            authz,
+            memo: Self::new_memo(),
+        })
+    }
+
+    fn of(user: User, authz: Arc<dyn crate::services::IAuthz>) -> Arc<Self> {
+        Arc::new(Self {
+            everything: false,
+            user: Some(user),
+            authz,
+            memo: Self::new_memo(),
+        })
+    }
+
+    /// Sees everything: nothing needs filtering.
+    pub(crate) fn everything(&self) -> bool {
+        self.everything
+    }
+
+    pub(crate) fn sees(&self, source: &str) -> bool {
+        if self.everything {
+            return true;
+        }
+        let Some(user) = &self.user else { return false };
+        let mut memo = self
+            .memo
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if memo.0.elapsed() > std::time::Duration::from_secs(5) {
+            *memo = (std::time::Instant::now(), std::collections::HashMap::new());
+        }
+        if let Some(known) = memo.1.get(source) {
+            return *known;
+        }
+        let yes = self
+            .authz
+            .allowed(user, Cap::Read, &format!("clusters/{source}"));
+        memo.1.insert(source.to_string(), yes);
+        yes
+    }
+
+    /// A node, an edge or an alert, by its id: it starts with the id of its source.
+    pub(crate) fn sees_node(&self, id: &str) -> bool {
+        self.everything || self.sees(id.split(':').next().unwrap_or(id))
+    }
+
+    /// May read this path (not a cluster): for what only some may see of the clusters they do.
+    pub(crate) fn may(&self, path: &str) -> bool {
+        self.everything
+            || self
+                .user
+                .as_ref()
+                .is_some_and(|u| self.authz.allowed(u, Cap::Read, path))
+    }
+}
+
+/// Who is looking at read-only data, and what of the clusters they may see. A route is open to whoever may read its path, and to whoever may see some
+/// cluster (a team that has been given its own cluster reads the map without a rule for `snapshot`); a `deny` on the path closes it for everyone.
+// the error is the response the extractor rejects with, as it is
+#[allow(clippy::result_large_err)]
+fn sight_of(parts: &Parts, state: &Shared, anonymous: bool) -> Result<Arc<Sight>, Response> {
+    if from_link(state, &parts.headers) {
+        return Ok(Sight::all(state.authz.clone()));
+    }
+    let session = session_user(state, &parts.headers);
+    // The wallboard (`?view=tv`) shows everything when the admin made it public: it is the one screen that is meant for the room, not for the person.
+    // Somebody who is logged in and looks at the admin panel is shown what their policies let them, whether the wallboard is public or not. Somebody
+    // who is not logged in sees the public wallboard's data.
+    let wallboard = parts
+        .uri
+        .query()
+        .is_some_and(|q| q.split('&').any(|kv| kv == "view=tv"));
+    let public = anonymous && state.auth.public_view() && !state.federation.is_locked();
+    if public && (session.is_none() || wallboard) {
+        return Ok(Sight::all(state.authz.clone()));
+    }
+    let user = session.ok_or_else(login_required)?;
+    // a wallboard that is not public still shows everything to who may read `wallboard`: a group that is given it sees every cluster on the TV, and
+    // only its own in the admin panel
+    if wallboard && state.authz.allowed(&user, Cap::Read, "wallboard") {
+        return Ok(Sight::all(state.authz.clone()));
+    }
+    let (cap, path) = policy_request(parts).unwrap_or((Cap::Read, String::new()));
+    let sight = Sight::of(user.clone(), state.authz.clone());
+    match state.authz.decide(&user, cap, &path) {
+        crate::policy::Decision::Allowed { .. } => Ok(sight),
+        crate::policy::Decision::Denied { .. } => Err(forbidden(cap, &path)),
+        crate::policy::Decision::NoRule => {
+            let local = state.db.sources.list_sources().unwrap_or_default();
+            let sees_one = local.iter().any(|s| sight.sees(&s.id))
+                || state
+                    .links
+                    .source_views()
+                    .iter()
+                    .any(|v| v["id"].as_str().is_some_and(|id| sight.sees(id)));
+            if sees_one {
+                Ok(sight)
+            } else {
+                Err(forbidden(cap, &path))
+            }
+        }
+    }
+}
+
+/// For read-only data: a logged-in person (what they see of the clusters is theirs to see), or anyone when the wallboard is public.
+struct Viewer(Arc<Sight>);
 
 impl FromRequestParts<Shared> for Viewer {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, state: &Shared) -> Result<Self, Response> {
-        if from_link(state, &parts.headers) {
-            return Ok(Viewer);
-        }
-        let public = state.auth.public_view() && !state.federation.is_locked();
-        if public {
-            return Ok(Viewer);
-        }
-        let user = session_user(state, &parts.headers).ok_or_else(login_required)?;
-        let (cap, path) = policy_request(parts).unwrap_or((Cap::Read, String::new()));
-        if state.authz.allowed(&user, cap, &path) {
-            Ok(Viewer)
-        } else {
-            Err(forbidden(cap, &path))
-        }
+        sight_of(parts, state, true).map(Viewer)
+    }
+}
+
+/// The same for what a public wallboard does not get: somebody who is logged in.
+struct Member(Arc<Sight>);
+
+impl FromRequestParts<Shared> for Member {
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &Shared) -> Result<Self, Response> {
+        sight_of(parts, state, false).map(Member)
     }
 }

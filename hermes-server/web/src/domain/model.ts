@@ -31,6 +31,8 @@ export interface IacInfo {
 
 /** The facts agents attach to a node. Free-form on the wire: everything is optional. */
 export interface NodeMeta {
+  /** Swarm: the id of the task a workload is. */
+  taskID?: string;
   version?: string;
   api?: string;
   uid?: string;

@@ -21,6 +21,11 @@ version?: string,
  */
 upgrades?: boolean, 
 /**
+ * The agents may read the logs of the containers they report when the dashboard asks (the log panel). Off, no agent can: the manifest
+ * gives no right to, and the agent says it cannot.
+ */
+logs?: boolean, 
+/**
  * Swarm and Docker: some machines are Windows, so the stack (or compose file) also gets the Windows agent.
  */
 windows?: boolean, };
