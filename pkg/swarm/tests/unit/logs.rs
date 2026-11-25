@@ -116,8 +116,8 @@ mod fake_engine {
             State((_, _)): State<(bool, Shared)>,
             Query(q): Query<HashMap<String, String>>,
         ) -> Response {
-            let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
-            let service = filters["service"][0].as_str().unwrap();
+            // {"service":["svc"]}: the name between the third pair of quotes
+            let service = q["filters"].split('"').nth(3).unwrap();
             let all = vec![
                 task("t1", "svc", 1, "n1", "2026-05-01T10:00:00Z"),
                 task("t2", "svc", 1, "n1", "2026-05-02T10:00:00Z"),
