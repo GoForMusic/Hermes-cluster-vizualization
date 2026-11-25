@@ -3,7 +3,11 @@
 /**
  * `GET /api/users`: one account, without anything secret.
  */
-export type UserView = { id: number, username: string, email: string, role: string, disabled: boolean, breakGlass: boolean, created: number, 
+export type UserView = { id: number, username: string, email: string, role: string, disabled: boolean, breakGlass: boolean, 
+/**
+ * The id of the identity provider this account signs in through; empty for a local account.
+ */
+sso: string, created: number, 
 /**
  * The ids of the groups this user is in.
  */

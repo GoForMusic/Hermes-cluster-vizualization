@@ -344,5 +344,7 @@ fn new_user<'a>(name: &'a str, hash: &'a str, created: i64) -> NewUser<'a> {
         email: "",
         break_glass: false,
         created,
+        idp: "",
+        external_id: "",
     }
 }

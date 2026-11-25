@@ -18,6 +18,7 @@ mod live_controller;
 mod registry_controller;
 mod settings_controller;
 mod sources_controller;
+mod sso_controller;
 
 use std::sync::Arc;
 
@@ -66,6 +67,8 @@ pub fn routes(state: Shared) -> Router {
             post(auth_controller::auth_login).layer(DefaultBodyLimit::max(AUTH_BODY)),
         )
         .route("/api/auth/logout", post(auth_controller::auth_logout))
+        .route("/api/auth/sso/{id}/login", get(sso_controller::login))
+        .route("/api/auth/sso/{id}/callback", get(sso_controller::callback))
         .route(
             "/api/auth/password",
             post(auth_controller::auth_password).layer(DefaultBodyLimit::max(AUTH_BODY)),
@@ -95,6 +98,15 @@ pub fn routes(state: Shared) -> Router {
         .route(
             "/api/registry/versions",
             get(registry_controller::registry_versions),
+        )
+        .route(
+            "/api/identity-providers",
+            get(sso_controller::list).post(sso_controller::create),
+        )
+        .route("/api/identity-providers/test", post(sso_controller::test))
+        .route(
+            "/api/identity-providers/{id}",
+            put(sso_controller::update).delete(sso_controller::delete),
         )
         .route(
             "/api/security",
@@ -247,6 +259,8 @@ fn link_user() -> User {
         email: String::new(),
         disabled: false,
         break_glass: false,
+        idp: String::new(),
+        external_id: String::new(),
     }
 }
 

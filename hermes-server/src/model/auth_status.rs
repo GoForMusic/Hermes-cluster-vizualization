@@ -18,6 +18,10 @@ pub struct AuthStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub grants: Option<Vec<crate::model::Grant>>,
+    /// The identity providers a person who is not logged in may sign in with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub sso: Option<Vec<crate::model::SsoProviderView>>,
     /// This hub is managed by another one (or is about to be): it has no login of its own, and the page says so.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

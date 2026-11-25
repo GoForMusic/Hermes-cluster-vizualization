@@ -1,10 +1,11 @@
 // First-run setup and login (the same idea as Uptime Kuma: the first visit creates the admin).
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { SsoProviderView } from '../../generated/SsoProviderView';
 import type { MemberCode } from '../../hub/HubClient';
 import { useClient } from '../../state/context';
 import { Brand } from '../../ui/brand';
 import { useAsyncSubmit } from '../../ui/hooks';
-import { hubAddress } from '../../hub/base';
+import { hubAddress, withBase } from '../../hub/base';
 
 const Field = ({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) => (
   <label className="f">{label}{children}{hint ? <span className="muted" style={{ fontSize: 11.5 }}>{hint}</span> : null}</label>
@@ -19,6 +20,18 @@ export function AuthScreen({ mode, onDone, onMember, expired = false }: { mode: 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [publicView, setPublicView] = useState(true);
+  // the identity providers to offer, and what went wrong if the person was sent back from one
+  const [providers, setProviders] = useState<SsoProviderView[]>([]);
+  const [ssoError, setSsoError] = useState('');
+  useEffect(() => {
+    if (setup) return;
+    client.auth.status().then((a) => setProviders(a.sso ?? [])).catch(() => {});
+    const why = new URLSearchParams(location.search).get('sso_error');
+    if (why) {
+      setSsoError(why);
+      history.replaceState(null, '', location.pathname + location.hash); // the message is read once
+    }
+  }, [client, setup]);
 
   const { busy, error, submit } = useAsyncSubmit(
     async () => {
@@ -61,6 +74,13 @@ export function AuthScreen({ mode, onDone, onMember, expired = false }: { mode: 
         {setup && onMember ? <SetupKind managed={false} onChange={setManaged} /> : null}
         <h1>{setup ? 'Create the admin account' : 'Log in'}</h1>
         {expired && !setup ? <p className="help" role="status" style={{ marginTop: 0 }}>You were logged out: your login ended. Sign in again to go on.</p> : null}
+        {ssoError ? <p className="err" role="alert" style={{ marginTop: 0 }}>{ssoError}</p> : null}
+        {providers.length && !setup ? (
+          <div className="form" style={{ gap: 8 }}>
+            {providers.map((p) => <a key={p.id} className="btn primary" href={withBase(`/api/auth/sso/${encodeURIComponent(p.id)}/login`)}>Sign in with {p.name} →</a>)}
+            <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>or with a local account (break-glass):</p>
+          </div>
+        ) : null}
         {setup ? <p className="help">First start: choose the account that manages sources, alert rules and settings. Only the password hash is stored.</p> : null}
         <div className="form">
           <Field label="Username" hint={setup ? '3–32 characters: letters, digits, . - _' : undefined}>

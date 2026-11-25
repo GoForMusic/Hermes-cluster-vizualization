@@ -67,6 +67,7 @@ function Users({ users, groups, reload }: Lists) {
                 <td>
                   <span className="who"><Icon name="user" size={16} /><b>{u.username}</b></span>{' '}
                   {u.breakGlass ? <StatusChip status="warn">Break-glass</StatusChip> : null}{' '}
+                  {u.sso ? <StatusChip status="ok">SSO</StatusChip> : null}{' '}
                   {u.disabled ? <StatusChip status="crit">Disabled</StatusChip> : null}
                 </td>
                 <td>{u.email || <span className="muted">—</span>}</td>
@@ -140,9 +141,11 @@ function EditUser({ user, onClose, onDone }: { user: UserView; onClose: () => vo
       <h2>{user.username}</h2>
       <form className="form" onSubmit={submit}>
         <label className="f">Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" /></label>
-        <label className="f check"><input type="checkbox" checked={breakGlass} onChange={(e) => setBreakGlass(e.target.checked)} /> Break-glass account</label>
+        {user.sso ? null : <label className="f check"><input type="checkbox" checked={breakGlass} onChange={(e) => setBreakGlass(e.target.checked)} /> Break-glass account</label>}
         <label className="f check"><input type="checkbox" checked={disabled} disabled={me} onChange={(e) => setDisabled(e.target.checked)} /> Disabled: cannot log in, and is logged out now</label>
-        {me
+        {user.sso
+          ? <p className="help">This account signs in through single sign-on: it has no password here.</p>
+          : me
           ? <p className="help">This is you: change your password in Profile.</p>
           : <label className="f">Set a new password (leave empty to keep it; their sessions end)<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" /></label>}
         <div className="err" role="alert">{error}</div>

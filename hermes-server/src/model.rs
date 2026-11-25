@@ -19,6 +19,7 @@ mod registry;
 mod session_policy;
 mod source;
 mod source_view;
+mod sso;
 mod upgrade_view;
 mod uptime;
 mod user;
@@ -47,6 +48,7 @@ pub use source::{
     Source, TYPE_DOCKER_AGENT, TYPE_KUBERNETES_AGENT, TYPE_SWARM_AGENT, is_agent_type,
 };
 pub use source_view::SourceView;
+pub use sso::{GroupMapping, Provider, ProviderInput, ProviderTest, ProviderView, SsoProviderView};
 pub use upgrade_view::{UpgradeRequest, UpgradeView};
 pub use uptime::Uptime;
 pub use user::{AccessCheck, Grant, Group, GroupView, Policy, PolicyView, User, UserView};

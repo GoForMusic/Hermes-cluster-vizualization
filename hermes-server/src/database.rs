@@ -10,6 +10,7 @@ mod db_context_sqlite;
 mod federation_dao_imp;
 mod group_dao_imp;
 mod i_db_context;
+mod idp_dao_imp;
 mod policy_dao_imp;
 mod registry_dao_imp;
 mod session_dao_imp;
@@ -37,6 +38,7 @@ pub(crate) fn seed_access_again(
 
 pub use group_dao_imp::{GroupDAOImp, IGroupDAO};
 pub use i_db_context::IDbContext;
+pub use idp_dao_imp::{IIdpDAO, IdpDAOImp};
 pub use policy_dao_imp::{IPolicyDAO, PolicyDAOImp};
 pub use registry_dao_imp::{IRegistryDAO, RegistryDAOImp};
 pub use session_dao_imp::{ISessionDAO, SessionDAOImp, SessionRow};
@@ -52,7 +54,7 @@ pub fn now_ms() -> i64 {
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
-/// The ten DAOs the rest of the hub depends on, all sharing one `IDbContext`. Built once at startup (`sqlite`/
+/// The eleven DAOs the rest of the hub depends on, all sharing one `IDbContext`. Built once at startup (`sqlite`/
 /// `sqlite_in_memory`); everywhere else takes the specific `Arc<dyn I*DAO>` it needs off this, never the whole thing.
 pub struct Repositories {
     pub alerts: Arc<dyn IAlertDAO>,
@@ -64,6 +66,7 @@ pub struct Repositories {
     pub users: Arc<dyn IUserDAO>,
     pub groups: Arc<dyn IGroupDAO>,
     pub policies: Arc<dyn IPolicyDAO>,
+    pub idps: Arc<dyn IIdpDAO>,
     pub sessions: Arc<dyn ISessionDAO>,
     /// The shared context every DAO above is built on. Only meant for tests that need to reach the raw connection
     /// (to set up a fixture SQLite would not let a DAO's own interface express) — everything else goes through a DAO.
@@ -95,6 +98,7 @@ impl Repositories {
             users: Arc::new(UserDAOImp::new(ctx.clone())),
             groups: Arc::new(GroupDAOImp::new(ctx.clone())),
             policies: Arc::new(PolicyDAOImp::new(ctx.clone())),
+            idps: Arc::new(IdpDAOImp::new(ctx.clone())),
             sessions: Arc::new(SessionDAOImp::new(ctx.clone())),
             ctx,
         }

@@ -14,6 +14,9 @@ import type { Node as WireNode } from '../generated/Node';
 import type { CommLogEntry } from '../generated/CommLogEntry';
 import type { CommLogView } from '../generated/CommLogView';
 import type { PolicyView } from '../generated/PolicyView';
+import type { ProviderInput } from '../generated/ProviderInput';
+import type { ProviderTest } from '../generated/ProviderTest';
+import type { ProviderView } from '../generated/ProviderView';
 import type { RegistryInput } from '../generated/RegistryInput';
 import type { RegistryTest } from '../generated/RegistryTest';
 import type { RegistryView } from '../generated/RegistryView';
@@ -138,6 +141,17 @@ export interface IAccessApi {
   check(user: number, capability: string, path: string): Promise<AccessCheck>;
 }
 
+/** Single sign-on: the identity providers (OpenID Connect) people may sign in with. */
+export interface ISsoApi {
+  providers(): Promise<ProviderView[]>;
+  /** `secret` empty on a change keeps the saved one. */
+  create(input: ProviderInput): Promise<ProviderView>;
+  update(id: string, input: ProviderInput): Promise<ProviderView>;
+  remove(id: string): Promise<void>;
+  /** Reads the provider's discovery document: is the address right. */
+  test(issuer: string): Promise<ProviderTest>;
+}
+
 export interface IUptimeApi {
   /** `span` in seconds. */
   load(span: number, buckets: number): Promise<Record<string, Uptime>>;
@@ -165,6 +179,7 @@ export interface IHubClient {
   federation: IFederationApi;
   commLog: ICommLogApi;
   access: IAccessApi;
+  sso: ISsoApi;
   uptime: IUptimeApi;
   feed: IEventFeed;
 }

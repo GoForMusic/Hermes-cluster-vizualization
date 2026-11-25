@@ -7,7 +7,7 @@ import type { UserView } from '../generated/UserView';
 import { renderWithHub } from './render';
 import { Settings } from '../features/admin/pages/Settings';
 
-const alice: UserView = { id: 2, username: 'alice', email: 'alice@example.com', role: 'admin', disabled: false, breakGlass: false, created: 2, groups: [20] };
+const alice: UserView = { id: 2, username: 'alice', email: 'alice@example.com', role: 'admin', disabled: false, breakGlass: false, sso: '', created: 2, groups: [20] };
 const ops: GroupView = { id: 20, name: 'ops', description: 'on call', created: 2, members: [2], system: false, policies: [30] };
 const everyone: GroupView = { id: 21, name: 'everyone', description: 'all of them', created: 1, members: [1, 2], system: true, policies: [] };
 const readOnly: PolicyView = { id: 30, name: 'read-only', description: 'look', hcl: 'path "*" {\n  capabilities = ["read"]\n}\n', builtin: true, created: 1, groups: [20] };
@@ -136,7 +136,7 @@ describe('the settings sections', () => {
 });
 
 describe('search and pages', () => {
-  const many = Array.from({ length: 23 }, (_, i): UserView => ({ id: 100 + i, username: `user${String(i).padStart(2, '0')}`, email: i === 7 ? 'special@example.com' : '', role: 'admin', disabled: false, breakGlass: false, created: 2, groups: [] }));
+  const many = Array.from({ length: 23 }, (_, i): UserView => ({ id: 100 + i, username: `user${String(i).padStart(2, '0')}`, email: i === 7 ? 'special@example.com' : '', role: 'admin', disabled: false, breakGlass: false, sso: '', created: 2, groups: [] }));
   const openMany = () => renderWithHub(<Settings arg="users" />, { prepare: (hub) => { hub.users = [...hub.users, ...many]; } });
 
   it('shows ten at a time and moves between pages', async () => {

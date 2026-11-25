@@ -18,9 +18,11 @@ aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 hcl-rs = "0.19"
+openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 axum = { version = "0.8.9", features = ["macros"] }
 axum-server = { version = "0.8.0", default-features = false, features = ["tls-rustls-no-provider"] }
 base64 = "0.23.1"
+url = "2"
 futures-util = "0.3.34"
 hex = "0.4.3"
 hermes-proto = { path = "../pkg/proto" }
@@ -47,6 +49,8 @@ ts-rs = { version = "12.0.1", features = ["serde-json-impl"] }
 
 [dev-dependencies]
 hermes-agentkit = { path = "../pkg/agentkit" }
+jsonwebtoken = { version = "9", default-features = false }
 rcgen = "0.14.10"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "cookies", "rustls-no-provider"] }
 tempfile = "3.27.0"
+rsa = "0.9"

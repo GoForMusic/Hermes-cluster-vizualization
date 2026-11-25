@@ -82,6 +82,8 @@ loses what they could do. Afterwards they are yours: edit or delete them, or add
 `group_policies` in `hub.db` (the hub reads the policies again every few seconds). A policy that does not parse is ignored (nothing is allowed by it) and logged.
 
 
+Single sign-on with an identity provider (OpenID Connect) is in [sso.md](sso.md).
+
 ### How long a login lasts
 
 Settings → Security (`GET/PUT /api/security`, stored in `settings` as `auth.session_policy`): **log out after** N hours (1 to 720, 336 = 14 days by default) however busy the

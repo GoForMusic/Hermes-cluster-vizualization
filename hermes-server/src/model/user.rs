@@ -18,6 +18,10 @@ pub struct User {
     /// A local account that always keeps its password and its access, whatever else is configured (the way in when the identity provider
     /// is down or set up wrong). Never disabled or deleted, and there is always at least one.
     pub break_glass: bool,
+    /// The identity provider that vouches for this account (its id); empty for a local account, which has a password.
+    pub idp: String,
+    /// Who the provider says this is (the `sub` claim).
+    pub external_id: String,
 }
 
 /// A set of users. What a group may do comes with the policies that are attached to it.
@@ -55,6 +59,8 @@ pub struct UserView {
     pub role: String,
     pub disabled: bool,
     pub break_glass: bool,
+    /// The id of the identity provider this account signs in through; empty for a local account.
+    pub sso: String,
     #[ts(type = "number")]
     pub created: i64,
     /// The ids of the groups this user is in.

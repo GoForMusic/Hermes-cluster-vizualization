@@ -172,6 +172,7 @@ impl AccessImp {
             role: user.role.clone(),
             disabled: user.disabled,
             break_glass: user.break_glass,
+            sso: user.idp.clone(),
             created: user.created,
             groups,
         })
@@ -309,6 +310,7 @@ impl IAccess for AccessImp {
                 role: u.role,
                 disabled: u.disabled,
                 break_glass: u.break_glass,
+                sso: u.idp,
                 created: u.created,
             })
             .collect())
@@ -337,6 +339,8 @@ impl IAccess for AccessImp {
             email: &email,
             break_glass,
             created: (self.now)(),
+            idp: "",
+            external_id: "",
         })?;
         self.user_view(&user)
     }
@@ -381,6 +385,16 @@ impl IAccess for AccessImp {
         if changes.break_glass == Some(true) && user.disabled && changes.disabled != Some(false) {
             return Err(AccessError::Protected(
                 "a disabled account cannot be a break-glass account",
+            ));
+        }
+        if changes.password.is_some() && !user.idp.is_empty() {
+            return Err(AccessError::Protected(
+                "this account signs in through single sign-on: it has no password here",
+            ));
+        }
+        if changes.break_glass == Some(true) && !user.idp.is_empty() {
+            return Err(AccessError::Protected(
+                "a break-glass account is a local one, with a password",
             ));
         }
         if changes.password.is_some() && id == acting {

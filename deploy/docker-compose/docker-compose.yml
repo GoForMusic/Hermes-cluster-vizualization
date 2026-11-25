@@ -14,6 +14,7 @@ services:
       # encrypts the credentials stored in the database (kubeconfigs, agent tokens); setup.sh generates it. Lose it and they are unreadable.
       HUB_SECRET_KEY: ${HUB_SECRET_KEY:?run ./setup.sh to create .env}
       HUB_DEMO: "0"
+      # HUB_PUBLIC_URL: https://hub.example.com   # only when the address cannot be told from the request (single sign-on callback)
       # HUB_BASE_PATH: /hermes   # only when a proxy sends just that path and does not strip it (then route PathPrefix(`/hermes`) to this service)
     volumes:
       - hermes-data:/data              # the SQLite database: sources (+ encrypted credentials), settings, alerts, heartbeats

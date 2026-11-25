@@ -14,7 +14,7 @@ use base64::engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::database::{IGroupDAO, ISessionDAO, ISettingsDAO, IUserDAO, NewUser, now_ms};
+use crate::database::{IGroupDAO, IIdpDAO, ISessionDAO, ISettingsDAO, IUserDAO, NewUser, now_ms};
 use crate::model::{SessionPolicy, User};
 
 pub(crate) const MIN_PASSWORD: usize = 10;
@@ -167,6 +167,8 @@ pub trait IAuth: Send + Sync {
     -> Result<String, AuthError>;
     /// `ip` and the username together are what the rate limit counts.
     fn login(&self, username: &str, password: &str, ip: &str) -> Result<String, AuthError>;
+    /// Logs a user in whose identity a provider has vouched for (single sign-on): the session, with no password involved.
+    fn session_for(&self, user_id: i64) -> Result<String, AuthError>;
     fn logout(&self, token: &str);
     /// Resolves a cookie token to its user, or `None` (unknown, expired, or idle for too long). A call that finds the session alive marks it used.
     fn authenticate(&self, token: &str) -> Option<User>;
@@ -188,6 +190,7 @@ pub trait IAuth: Send + Sync {
 pub struct AuthImp {
     users: Arc<dyn IUserDAO>,
     groups: Arc<dyn IGroupDAO>,
+    idps: Arc<dyn IIdpDAO>,
     sessions: Arc<dyn ISessionDAO>,
     settings: Arc<dyn ISettingsDAO>,
     now: Clock,
@@ -202,15 +205,17 @@ impl AuthImp {
     pub fn new(
         users: Arc<dyn IUserDAO>,
         groups: Arc<dyn IGroupDAO>,
+        idps: Arc<dyn IIdpDAO>,
         sessions: Arc<dyn ISessionDAO>,
         settings: Arc<dyn ISettingsDAO>,
     ) -> Self {
-        Self::with_clock(users, groups, sessions, settings, Arc::new(now_ms))
+        Self::with_clock(users, groups, idps, sessions, settings, Arc::new(now_ms))
     }
 
     pub fn with_clock(
         users: Arc<dyn IUserDAO>,
         groups: Arc<dyn IGroupDAO>,
+        idps: Arc<dyn IIdpDAO>,
         sessions: Arc<dyn ISessionDAO>,
         settings: Arc<dyn ISettingsDAO>,
         now: Clock,
@@ -218,6 +223,7 @@ impl AuthImp {
         Self {
             users,
             groups,
+            idps,
             sessions,
             settings,
             now,
@@ -268,6 +274,15 @@ impl AuthImp {
 }
 
 impl AuthImp {
+    /// An enabled identity provider is set to insist on single sign-on.
+    fn passwords_refused(&self) -> bool {
+        self.idps
+            .list_providers()
+            .unwrap_or_default()
+            .iter()
+            .any(|p| p.enabled && p.enforce)
+    }
+
     /// The session behind a token, if it is still good under the policy of now: not past its end, not older than the longest login, not idle
     /// for longer than the limit. One that is not is deleted. `touch`: it was used just now.
     fn check(&self, token: &str, touch: bool) -> Option<User> {
@@ -327,6 +342,8 @@ impl IAuth for AuthImp {
             email: "",
             break_glass: true,
             created: (self.now)(),
+            idp: "",
+            external_id: "",
         })?;
         // and in `owners`, the group of the `admin` policy: what the first account was able to do before groups existed
         if let Some(owners) = self.groups.group_by_name("owners")? {
@@ -357,12 +374,26 @@ impl IAuth for AuthImp {
             user.as_ref().map_or(&self.dummy, |u| &u.password_hash),
         );
         // a disabled account is told the same as a wrong password: nothing here says that the name exists
-        let Some(user) = user.filter(|u| ok && !u.disabled) else {
+        // a person who signs in through a provider has no password here; and while a provider is set to insist, only break-glass accounts have one
+        let may_use_password =
+            |u: &User| u.idp.is_empty() && (u.break_glass || !self.passwords_refused());
+        let Some(user) = user.filter(|u| ok && !u.disabled && may_use_password(u)) else {
             self.fail(&key);
             return Err(AuthError::BadCredentials);
         };
         self.reset(&key);
         self.new_session(user.id)
+    }
+
+    fn session_for(&self, user_id: i64) -> Result<String, AuthError> {
+        let user = self
+            .users
+            .user_by_id(user_id)?
+            .ok_or(AuthError::BadCredentials)?;
+        if user.disabled {
+            return Err(AuthError::BadCredentials);
+        }
+        self.new_session(user_id)
     }
 
     fn logout(&self, token: &str) {
